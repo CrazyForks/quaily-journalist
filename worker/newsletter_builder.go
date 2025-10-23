@@ -17,21 +17,22 @@ import (
 )
 
 type NewsletterBuilder struct {
-	Store        *storage.RedisStore
-	Source       string
-	Channel      string
-	Frequency    string
-	TopN         int
-	MinItems     int
-	OutputDir    string
-	Interval     time.Duration // how often to evaluate/publish
-	Nodes        []string
-	SkipDuration time.Duration
-	Preface      string
-	Postscript   string
-	BaseURL      string // for node links
-	Language     string
-	Summarizer   ai.Summarizer
+	Store         *storage.RedisStore
+	Source        string
+	Channel       string
+	Frequency     string
+	TopN          int
+	MinItems      int
+	OutputDir     string
+	Interval      time.Duration // how often to evaluate/publish
+	Nodes         []string
+	SkipDuration  time.Duration
+	Preface       string
+	Postscript    string
+	BaseURL       string // for node links
+	Language      string
+	Summarizer    ai.Summarizer
+	TitleTemplate string
 }
 
 func (w *NewsletterBuilder) Start(ctx context.Context) error {
@@ -132,7 +133,11 @@ func (w *NewsletterBuilder) filename(period string) string {
 
 func (w *NewsletterBuilder) renderMarkdown(period string, items []model.WithScore) string {
 	// Build template data
-	postTitle := fmt.Sprintf("%s — %s", w.Channel, period)
+	// Determine post title: use configured template or default to "Digest of <Channel> <YYYY-MM-DD>"
+	postTitle := strings.TrimSpace(w.TitleTemplate)
+	if postTitle == "" {
+		postTitle = fmt.Sprintf("Digest of %s %s", w.Channel, time.Now().UTC().Format("2006-01-02"))
+	}
 	// Slug is always the filename without ".md"
 	name := w.filename(period)
 	slug := strings.TrimSuffix(name, ".md")
@@ -147,6 +152,17 @@ func (w *NewsletterBuilder) renderMarkdown(period string, items []model.WithScor
 	// Use a base context and rely on per-call timeouts inside the AI client
 	ctxAI := context.Background()
 	maxN := min(len(items), w.TopN)
+	// Resolve node display titles via cached values in storage (populated at init).
+	nodeTitle := map[string]string{}
+	set := map[string]struct{}{}
+	for i := 0; i < maxN; i++ {
+		set[items[i].Item.NodeName] = struct{}{}
+	}
+	for n := range set {
+		if t, err := w.Store.GetNodeTitle(context.Background(), w.Source, n); err == nil && strings.TrimSpace(t) != "" {
+			nodeTitle[n] = t
+		}
+	}
 	for i := 0; i < maxN; i++ {
 		it := items[i].Item
 		var desc string
@@ -156,10 +172,14 @@ func (w *NewsletterBuilder) renderMarkdown(period string, items []model.WithScor
 			}
 		}
 		nodeURL := strings.TrimRight(w.BaseURL, "/") + "/go/" + it.NodeName
+		displayNode := it.NodeName
+		if t, ok := nodeTitle[it.NodeName]; ok && strings.TrimSpace(t) != "" {
+			displayNode = t
+		}
 		data.Items = append(data.Items, newsletter.Item{
 			Title:       it.Title,
 			URL:         it.URL,
-			NodeName:    it.NodeName,
+			NodeName:    displayNode,
 			NodeURL:     nodeURL,
 			Description: desc,
 			Replies:     it.Replies,

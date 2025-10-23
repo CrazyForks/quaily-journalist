@@ -61,7 +61,7 @@ func (o *OpenAIClient) SummarizeItem(ctx context.Context, title, content, langua
 		content = string([]rune(content)[:1000])
 	}
 
-	sys := fmt.Sprintf("You are a concise newsletter editor. Write in %s. Return 1–2 sentences (30–60 words) summarizing the topic. Plain text, no links.", langOrDefault(language))
+	sys := fmt.Sprintf("You are a concise newsletter editor. Write in %s. Return 1–3 sentences (30–180 words) summarizing the topic. Plain text, no links.", langOrDefault(language))
 	user := fmt.Sprintf("Title: %s\nContent: %s", title, content)
 	out, err := o.create(ctx, sys, user)
 	if err != nil {

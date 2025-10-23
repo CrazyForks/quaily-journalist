@@ -14,6 +14,7 @@ import (
 	"quaily-journalist/internal/newsletter"
 	"quaily-journalist/internal/redisclient"
 	"quaily-journalist/internal/storage"
+	"quaily-journalist/internal/v2ex"
 
 	"github.com/spf13/cobra"
 )
@@ -29,42 +30,55 @@ var generateCmd = &cobra.Command{
 
 		// find channel
 		var ch *struct {
-			Name       string
-			Source     string
-			Frequency  string
-			TopN       int
-			MinItems   int
-			OutputDir  string
-			Nodes      []string
-			Preface    string
-			Postscript string
-			Language   string
+			Name      string
+			Source    string
+			Frequency string
+			TopN      int
+			MinItems  int
+			OutputDir string
+			Nodes     []string
+			Template  struct {
+				Title      string
+				Preface    string
+				Postscript string
+			}
+			Language string
 		}
 		for i := range cfg.Newsletters.Channels {
 			c := cfg.Newsletters.Channels[i]
 			if c.Name == channelName {
 				ch = &struct {
-					Name       string
-					Source     string
-					Frequency  string
-					TopN       int
-					MinItems   int
-					OutputDir  string
-					Nodes      []string
-					Preface    string
-					Postscript string
-					Language   string
+					Name      string
+					Source    string
+					Frequency string
+					TopN      int
+					MinItems  int
+					OutputDir string
+					Nodes     []string
+					Template  struct {
+						Title      string
+						Preface    string
+						Postscript string
+					}
+					Language string
 				}{
-					Name:       c.Name,
-					Source:     strings.ToLower(c.Source),
-					Frequency:  strings.ToLower(c.Frequency),
-					TopN:       c.TopN,
-					MinItems:   c.MinItems,
-					OutputDir:  c.OutputDir,
-					Nodes:      c.Nodes,
-					Preface:    c.Preface,
-					Postscript: c.Postscript,
-					Language:   c.Language,
+					Name:      c.Name,
+					Source:    strings.ToLower(c.Source),
+					Frequency: strings.ToLower(c.Frequency),
+					TopN:      c.TopN,
+					MinItems:  c.MinItems,
+					OutputDir: c.OutputDir,
+					Nodes:     c.Nodes,
+					Template: struct {
+						Title      string
+						Preface    string
+						Postscript string
+					}{
+						Title:      c.Template.Title,
+						Preface:    c.Template.Preface,
+						Postscript: c.Template.Postscript,
+					},
+					Language: c.Language,
 				}
 				break
 			}
@@ -88,6 +102,24 @@ var generateCmd = &cobra.Command{
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+
+		// Prefetch node titles at initialization using the node list from config
+		if strings.ToLower(ch.Source) == "v2ex" {
+			v2c := v2ex.NewClient(cfg.Sources.V2EX.BaseURL, cfg.Sources.V2EX.Token)
+			for _, n := range ch.Nodes {
+				n = strings.TrimSpace(n)
+				if n == "" {
+					continue
+				}
+				if t, _ := store.GetNodeTitle(context.Background(), "v2ex", n); strings.TrimSpace(t) == "" {
+					ctxNode, cancelNode := context.WithTimeout(context.Background(), 5*time.Second)
+					if title, err := v2c.NodeTitle(ctxNode, n); err == nil && strings.TrimSpace(title) != "" {
+						_ = store.SetNodeTitle(context.Background(), "v2ex", n, title, 30*24*time.Hour)
+					}
+					cancelNode()
+				}
+			}
+		}
 
 		items, err := store.TopNews(ctx, ch.Source, period, fetchN)
 		if err != nil {
@@ -115,7 +147,11 @@ var generateCmd = &cobra.Command{
 		}
 
 		// Prepare template data
-		postTitle := fmt.Sprintf("%s — %s", ch.Name, period)
+		// Determine post title: use configured template or default to "Digest of <Channel> <YYYY-MM-DD>"
+		postTitle := strings.TrimSpace(ch.Template.Title)
+		if postTitle == "" {
+			postTitle = fmt.Sprintf("Digest of %s %s", ch.Name, period)
+		}
 		// Filename and slug: frequency-YYYYMMDD.md
 		dateName := time.Now().UTC().Format("20060102")
 		fileName := fmt.Sprintf("%s-%s.md", ch.Frequency, dateName)
@@ -125,8 +161,8 @@ var generateCmd = &cobra.Command{
 			Title:      postTitle,
 			Slug:       slug,
 			Datetime:   time.Now().UTC().Format("2006-01-02 15:04"),
-			Preface:    ch.Preface,
-			Postscript: ch.Postscript,
+			Preface:    ch.Template.Preface,
+			Postscript: ch.Template.Postscript,
 			Items:      make([]newsletter.Item, 0, len(items)),
 		}
 		// Setup summarizer
@@ -136,6 +172,17 @@ var generateCmd = &cobra.Command{
 		}
 		// Use base context; AI client enforces per-call timeouts
 		ctxAI := context.Background()
+		// Resolve node titles for display (best-effort) from Redis cache
+		titleByNode := map[string]string{}
+		set := map[string]struct{}{}
+		for _, ws := range items {
+			set[ws.Item.NodeName] = struct{}{}
+		}
+		for n := range set {
+			if t, err := store.GetNodeTitle(context.Background(), ch.Source, n); err == nil && strings.TrimSpace(t) != "" {
+				titleByNode[n] = t
+			}
+		}
 		for _, ws := range items {
 			it := ws.Item
 			nodeURL := strings.TrimRight(baseURL, "/") + "/go/" + it.NodeName
@@ -145,10 +192,14 @@ var generateCmd = &cobra.Command{
 					desc = d
 				}
 			}
+			displayNode := it.NodeName
+			if t, ok := titleByNode[it.NodeName]; ok && strings.TrimSpace(t) != "" {
+				displayNode = t
+			}
 			nd.Items = append(nd.Items, newsletter.Item{
 				Title:       it.Title,
 				URL:         it.URL,
-				NodeName:    it.NodeName,
+				NodeName:    displayNode,
 				NodeURL:     nodeURL,
 				Description: desc,
 				Replies:     it.Replies,

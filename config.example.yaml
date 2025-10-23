@@ -9,11 +9,11 @@ redis:
 openai:
   api_key: ""
   model: "gpt-4o-mini"
-  base_url: ""  # optional, e.g., https://api.openai.com/v1
+  base_url: "" # optional, e.g., https://api.openai.com/v1
 
 sources:
   v2ex:
-    token: ""      # Optional
+    token: "" # Optional
     base_url: "https://www.v2ex.com"
     fetch_interval: "10m"
 
@@ -28,5 +28,7 @@ newsletters:
       min_items: 5
       item_skip_duration: "72h"
       language: "English"
-      preface: "Your daily V2EX highlights."
-      postscript: "Brought to you by Quaily Journalist."
+      template:
+        title: "V2EX Daily YYYY-MM-DD"
+        preface: "Your daily V2EX highlights."
+        postscript: "Brought to you by Quaily Journalist."

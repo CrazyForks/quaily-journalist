@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"quaily-journalist/internal/model"
@@ -33,6 +34,10 @@ func publishedKey(channel, period string) string {
 
 func skipKey(channel, id string) string {
 	return fmt.Sprintf("news:skip:%s:%s", channel, id)
+}
+
+func nodeTitleKey(source, node string) string {
+	return fmt.Sprintf("news:source:%s:node_title:%s", source, node)
 }
 
 // AddNews stores/updates a news item and adds it to the current period sorted set with a score.
@@ -105,4 +110,27 @@ func (s *RedisStore) MarkSkipped(ctx context.Context, channel, id string, d time
 		return nil
 	}
 	return s.rdb.Set(ctx, skipKey(channel, id), "1", d).Err()
+}
+
+// SetNodeTitle caches a human-friendly node title for a given source/node.
+func (s *RedisStore) SetNodeTitle(ctx context.Context, source, node, title string, ttl time.Duration) error {
+	if strings.TrimSpace(title) == "" {
+		return nil
+	}
+	if ttl <= 0 {
+		ttl = 30 * 24 * time.Hour
+	}
+	return s.rdb.Set(ctx, nodeTitleKey(source, node), title, ttl).Err()
+}
+
+// GetNodeTitle retrieves a cached node title; returns empty string if not found.
+func (s *RedisStore) GetNodeTitle(ctx context.Context, source, node string) (string, error) {
+	res, err := s.rdb.Get(ctx, nodeTitleKey(source, node)).Result()
+	if err == redis.Nil {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return res, nil
 }

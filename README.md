@@ -100,8 +100,10 @@ newsletters:
       min_items: 5
       item_skip_duration: "72h"
       language: "English"  # Language used for AI outputs
-      preface: "Your daily V2EX highlights."
-      postscript: "Brought to you by Quaily Journalist."
+      template:
+        title: ""  # optional; default: "Digest of <channel> <YYYY-MM-DD>"
+        preface: "Your daily V2EX highlights."
+        postscript: "Brought to you by Quaily Journalist."
 ```
 
 ### Configuration Source
@@ -242,7 +244,7 @@ The following guidelines apply to contributors and automated agents working in t
 - Do not commit secrets. Use the config file only (no env overrides).
 - Config search paths: project root, `$HOME/.config/quaily-journalist/`, `./configs/`.
 - Example `config.yaml` provided; create a local variant if needed.
-- Channels live under `newsletters.channels[]` with fields: `name`, `source`, `nodes`, `frequency`, `top_n`, `min_items`, `output_dir`, `item_skip_duration`, `language`, `preface`, `postscript`.
+- Channels live under `newsletters.channels[]` with fields: `name`, `source`, `nodes`, `frequency`, `top_n`, `min_items`, `output_dir`, `item_skip_duration`, `language`, and `template.{title,preface,postscript}`.
 
 ### Service (systemd)
 - Example unit: `configs/quaily-journalist.service.example`.

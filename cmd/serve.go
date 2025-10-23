@@ -65,6 +65,18 @@ var serveCmd = &cobra.Command{
 			summarizer = ai.NewOpenAI(ai.Config{APIKey: cfg.OpenAI.APIKey, Model: cfg.OpenAI.Model, BaseURL: cfg.OpenAI.BaseURL})
 		}
 
+		// Cache human-friendly node titles at init (best-effort)
+		for _, n := range nodes {
+			ctxNode, cancelNode := context.WithTimeout(context.Background(), 5*time.Second)
+			// Skip fetch if already cached
+			if t, _ := store.GetNodeTitle(ctxNode, "v2ex", n); strings.TrimSpace(t) == "" {
+				if title, err := v2c.NodeTitle(ctxNode, n); err == nil && strings.TrimSpace(title) != "" {
+					_ = store.SetNodeTitle(context.Background(), "v2ex", n, title, 30*24*time.Hour)
+				}
+			}
+			cancelNode()
+		}
+
 		// Newsletter builders (one per channel)
 		var builders []worker.Worker
 		for _, ch := range cfg.Newsletters.Channels {
@@ -73,21 +85,22 @@ var serveCmd = &cobra.Command{
 				return fmt.Errorf("invalid item_skip_duration for channel %s: %w", ch.Name, err)
 			}
 			builders = append(builders, &worker.NewsletterBuilder{
-				Store:        store,
-				Source:       strings.ToLower(ch.Source),
-				Channel:      ch.Name,
-				Frequency:    strings.ToLower(ch.Frequency),
-				TopN:         ch.TopN,
-				MinItems:     ch.MinItems,
-				OutputDir:    ch.OutputDir,
-				Interval:     30 * time.Minute,
-				Nodes:        ch.Nodes,
-				SkipDuration: sd,
-				Preface:      ch.Preface,
-				Postscript:   ch.Postscript,
-				BaseURL:      cfg.Sources.V2EX.BaseURL,
-				Language:     ch.Language,
-				Summarizer:   summarizer,
+				Store:         store,
+				Source:        strings.ToLower(ch.Source),
+				Channel:       ch.Name,
+				Frequency:     strings.ToLower(ch.Frequency),
+				TopN:          ch.TopN,
+				MinItems:      ch.MinItems,
+				OutputDir:     ch.OutputDir,
+				Interval:      30 * time.Minute,
+				Nodes:         ch.Nodes,
+				SkipDuration:  sd,
+				Preface:       ch.Template.Preface,
+				Postscript:    ch.Template.Postscript,
+				BaseURL:       cfg.Sources.V2EX.BaseURL,
+				Language:      ch.Language,
+				Summarizer:    summarizer,
+				TitleTemplate: ch.Template.Title,
 			})
 		}
 

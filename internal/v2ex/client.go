@@ -80,3 +80,49 @@ func (c *Client) TopicsByNode(ctx context.Context, node string) ([]model.NewsIte
 	}
 	return items, nil
 }
+
+// NodeMeta represents minimal node metadata we care about.
+type NodeMeta struct {
+	Name  string `json:"name"`
+	Title string `json:"title"`
+}
+
+// NodeTitle fetches the human-friendly title for a node by its slug (name).
+// API: GET /api/v2/nodes/:node_name
+func (c *Client) NodeTitle(ctx context.Context, node string) (string, error) {
+	endpoint := fmt.Sprintf("%s/api/v2/nodes/%s", c.baseURL, url.PathEscape(node))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", err
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("v2ex: node status %d", resp.StatusCode)
+	}
+	// Support both bare object and {"result": {...}} envelope forms.
+	var envelope struct {
+		Result *NodeMeta `json:"result"`
+		Name   string    `json:"name"`
+		Title  string    `json:"title"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return "", err
+	}
+	if envelope.Result != nil {
+		if envelope.Result.Title != "" {
+			return envelope.Result.Title, nil
+		}
+		return envelope.Result.Name, nil
+	}
+	if envelope.Title != "" {
+		return envelope.Title, nil
+	}
+	return envelope.Name, nil
+}

@@ -40,19 +40,28 @@ type NewslettersConfig struct {
 	Channels  []ChannelConfig `mapstructure:"channels"`
 }
 
+// ChannelTemplate groups text fields for rendering.
+type ChannelTemplate struct {
+	Title      string `mapstructure:"title"`
+	Preface    string `mapstructure:"preface"`
+	Postscript string `mapstructure:"postscript"`
+}
+
 // ChannelConfig defines a newsletter channel bound to a single source.
 type ChannelConfig struct {
-	Name             string   `mapstructure:"name"`      // e.g., v2ex_daily_digest
-	Source           string   `mapstructure:"source"`    // e.g., v2ex
-	Frequency        string   `mapstructure:"frequency"` // overrides default
-	TopN             int      `mapstructure:"top_n"`
-	MinItems         int      `mapstructure:"min_items"`
-	OutputDir        string   `mapstructure:"output_dir"`         // overrides default
-	Nodes            []string `mapstructure:"nodes"`              // source-specific nodes (e.g., V2EX node names)
-	ItemSkipDuration string   `mapstructure:"item_skip_duration"` // e.g., "72h"
-	Preface          string   `mapstructure:"preface"`
-	Postscript       string   `mapstructure:"postscript"`
-	Language         string   `mapstructure:"language"` // e.g., "English", "中文", affects AI output
+	Name             string          `mapstructure:"name"`      // e.g., v2ex_daily_digest
+	Source           string          `mapstructure:"source"`    // e.g., v2ex
+	Frequency        string          `mapstructure:"frequency"` // overrides default
+	TopN             int             `mapstructure:"top_n"`
+	MinItems         int             `mapstructure:"min_items"`
+	OutputDir        string          `mapstructure:"output_dir"`         // overrides default
+	Nodes            []string        `mapstructure:"nodes"`              // source-specific nodes (e.g., V2EX node names)
+	ItemSkipDuration string          `mapstructure:"item_skip_duration"` // e.g., "72h"
+	Template         ChannelTemplate `mapstructure:"template"`
+	// Legacy fields to maintain backward compatibility; copied into Template in FillDefaults.
+	PrefaceLegacy    string `mapstructure:"preface"`
+	PostscriptLegacy string `mapstructure:"postscript"`
+	Language         string `mapstructure:"language"` // e.g., "English", "中文", affects AI output
 }
 
 // Config is the top-level configuration structure.
@@ -110,6 +119,13 @@ func (c *Config) FillDefaults() {
 		}
 		if ch.Language == "" {
 			ch.Language = "English"
+		}
+		// Backward-compat: map legacy fields into template if present.
+		if ch.Template.Preface == "" && ch.PrefaceLegacy != "" {
+			ch.Template.Preface = ch.PrefaceLegacy
+		}
+		if ch.Template.Postscript == "" && ch.PostscriptLegacy != "" {
+			ch.Template.Postscript = ch.PostscriptLegacy
 		}
 	}
 }

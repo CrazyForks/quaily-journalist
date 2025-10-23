@@ -19,10 +19,8 @@ summary: |-
 
 {{ .Description }}
 
-*{{ .Replies }} Replies - [{{ .NodeName }}]({{ .NodeURL }}) - {{ .Created }}*
-{{ end -}}
-
----
+*{{ .Replies }} Replies - [@{{ .NodeName }}]({{ .NodeURL }}) - {{ .Created }}*
+{{ end }}
 
 {{ if .Postscript }}
 > {{ .Postscript }}
