@@ -59,7 +59,6 @@ var serveCmd = &cobra.Command{
 			Interval: interval,
 		}
 
-		// Prepare AI summarizer (optional)
 		var summarizer ai.Summarizer
 		if cfg.OpenAI.APIKey != "" {
 			summarizer = ai.NewOpenAI(ai.Config{APIKey: cfg.OpenAI.APIKey, Model: cfg.OpenAI.Model, BaseURL: cfg.OpenAI.BaseURL})

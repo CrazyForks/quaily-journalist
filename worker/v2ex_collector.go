@@ -21,7 +21,7 @@ type V2EXCollector struct {
 
 func (w *V2EXCollector) Start(ctx context.Context) error {
 	if w.Interval <= 0 {
-		w.Interval = 10 * time.Minute
+		w.Interval = 60 * time.Minute
 	}
 	t := time.NewTicker(w.Interval)
 	defer t.Stop()
