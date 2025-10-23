@@ -80,12 +80,24 @@ func (w *NewsletterBuilder) runOnce(ctx context.Context) {
 		log.Printf("builder: fetch top news err=%v", err)
 		return
 	}
-	items = filterByNodes(items, w.Nodes)
-	// filter out zero-reply or zero-score items (safety, though collector already skips)
+	// For Hacker News, nodes represent lists to poll; only filter by nodes if
+	// they include item types (ask/show/job/story). Otherwise, skip filtering.
+	if strings.ToLower(w.Source) == "hackernews" {
+		items = filterHNTypes(items, w.Nodes)
+	} else {
+		items = filterByNodes(items, w.Nodes)
+	}
+	// filter out low-signal items (safety, though collector already skips)
 	nz := make([]model.WithScore, 0, len(items))
 	for _, ws := range items {
-		if ws.Item.Replies > 0 && ws.Score > 0 {
-			nz = append(nz, ws)
+		if strings.ToLower(w.Source) == "hackernews" {
+			if ws.Score > 0 { // use computed score only; comments may be 0
+				nz = append(nz, ws)
+			}
+		} else {
+			if ws.Item.Replies > 0 && ws.Score > 0 {
+				nz = append(nz, ws)
+			}
 		}
 	}
 	items = nz
@@ -171,7 +183,7 @@ func (w *NewsletterBuilder) renderMarkdown(period string, items []model.WithScor
 				desc = d
 			}
 		}
-		nodeURL := strings.TrimRight(w.BaseURL, "/") + "/go/" + it.NodeName
+		nodeURL := nodeURLFor(w.Source, w.BaseURL, it.NodeName)
 		displayNode := it.NodeName
 		if t, ok := nodeTitle[it.NodeName]; ok && strings.TrimSpace(t) != "" {
 			displayNode = t
@@ -241,4 +253,56 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// nodeURLFor returns a source-appropriate URL for a node/category name.
+func nodeURLFor(source, baseURL, node string) string {
+	source = strings.ToLower(strings.TrimSpace(source))
+	base := strings.TrimRight(baseURL, "/")
+	switch source {
+	case "v2ex":
+		return base + "/go/" + node
+	case "hackernews":
+		// Map HN types to list pages for convenience.
+		n := strings.ToLower(strings.TrimSpace(node))
+		switch n {
+		case "ask":
+			return base + "/ask"
+		case "show":
+			return base + "/show"
+		case "job", "jobs":
+			return base + "/jobs"
+		default:
+			return base + "/news"
+		}
+	default:
+		return base
+	}
+}
+
+// filterHNTypes filters only when nodes include known HN item types; otherwise returns input unmodified.
+func filterHNTypes(items []model.WithScore, nodes []string) []model.WithScore {
+	if len(nodes) == 0 {
+		return items
+	}
+	// Determine which types are specified in nodes
+	allowed := map[string]struct{}{}
+	for _, n := range nodes {
+		s := strings.ToLower(strings.TrimSpace(n))
+		switch s {
+		case "ask", "show", "job", "story":
+			allowed[s] = struct{}{}
+		}
+	}
+	if len(allowed) == 0 {
+		// nodes likely specify lists (top/new/best/ask/show/job); do not filter here
+		return items
+	}
+	out := make([]model.WithScore, 0, len(items))
+	for _, it := range items {
+		if _, ok := allowed[strings.ToLower(it.Item.NodeName)]; ok {
+			out = append(out, it)
+		}
+	}
+	return out
 }

@@ -16,6 +16,9 @@ sources:
     token: "" # Optional
     base_url: "https://www.v2ex.com"
     fetch_interval: "10m"
+  hackernews:
+    base_api: "https://hacker-news.firebaseio.com/v0"
+    fetch_interval: "10m"
 
 newsletters:
   output_dir: "./out"
@@ -31,4 +34,19 @@ newsletters:
       template:
         title: "V2EX Daily YYYY-MM-DD"
         preface: "Your daily V2EX highlights."
+        postscript: "Brought to you by Quaily Journalist."
+    - name: "hn_daily_digest"
+      source: "hackernews"
+      # For HN, nodes are list names to poll directly: ["top", "new", "best", "ask", "show", "job"]
+      # If you also want to restrict by item types in the output, include type names (ask/show/job/story) here;
+      # otherwise all fetched items are eligible for publishing.
+      nodes: ["top", "best"]
+      frequency: "daily"
+      top_n: 20
+      min_items: 5
+      item_skip_duration: "72h"
+      language: "English"
+      template:
+        title: "Hacker News Daily YYYY-MM-DD"
+        preface: "Top HN highlights today."
         postscript: "Brought to you by Quaily Journalist."

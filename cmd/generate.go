@@ -125,12 +125,24 @@ var generateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		items = filterByNodesLocal(items, ch.Nodes)
-		// ensure zero-reply and zero-score items are excluded
+		// For Hacker News, nodes list are lists to poll; only filter by nodes
+		// if they include HN item types (ask/show/job/story). Otherwise, skip filtering.
+		if ch.Source == "hackernews" {
+			items = filterHNTypesLocal(items, ch.Nodes)
+		} else {
+			items = filterByNodesLocal(items, ch.Nodes)
+		}
+		// ensure low-signal items are excluded (source-specific)
 		nz := make([]model.WithScore, 0, len(items))
 		for _, ws := range items {
-			if ws.Item.Replies > 0 && ws.Score > 0 {
-				nz = append(nz, ws)
+			if ch.Source == "hackernews" {
+				if ws.Score > 0 {
+					nz = append(nz, ws)
+				}
+			} else {
+				if ws.Item.Replies > 0 && ws.Score > 0 {
+					nz = append(nz, ws)
+				}
 			}
 		}
 		items = nz
@@ -156,7 +168,14 @@ var generateCmd = &cobra.Command{
 		dateName := time.Now().UTC().Format("20060102")
 		fileName := fmt.Sprintf("%s-%s.md", ch.Frequency, dateName)
 		slug := strings.TrimSuffix(fileName, ".md")
-		baseURL := cfg.Sources.V2EX.BaseURL // only v2ex supported currently
+		var baseURL string
+		if ch.Source == "v2ex" {
+			baseURL = cfg.Sources.V2EX.BaseURL
+		} else if ch.Source == "hackernews" {
+			baseURL = "https://news.ycombinator.com"
+		} else {
+			baseURL = ""
+		}
 		nd := newsletter.Data{
 			Title:      postTitle,
 			Slug:       slug,
@@ -185,7 +204,7 @@ var generateCmd = &cobra.Command{
 		}
 		for _, ws := range items {
 			it := ws.Item
-			nodeURL := strings.TrimRight(baseURL, "/") + "/go/" + it.NodeName
+			nodeURL := nodeURLForLocal(ch.Source, baseURL, it.NodeName)
 			var desc string
 			if summarizer != nil {
 				if d, err := summarizer.SummarizeItem(ctxAI, it.Title, it.Content, ch.Language); err == nil && d != "" {
@@ -256,6 +275,61 @@ func filterByNodesLocal(items []model.WithScore, nodes []string) []model.WithSco
 	out := make([]model.WithScore, 0, len(items))
 	for _, ws := range items {
 		if _, ok := set[strings.ToLower(ws.Item.NodeName)]; ok {
+			out = append(out, ws)
+		}
+	}
+	return out
+}
+
+// nodeURLForLocal mirrors worker's logic for building a node/category URL per source
+func nodeURLForLocal(source, baseURL, node string) string {
+	source = strings.ToLower(strings.TrimSpace(source))
+	base := strings.TrimRight(baseURL, "/")
+	switch source {
+	case "v2ex":
+		if base == "" {
+			return ""
+		}
+		return base + "/go/" + node
+	case "hackernews":
+		if base == "" {
+			base = "https://news.ycombinator.com"
+		}
+		n := strings.ToLower(strings.TrimSpace(node))
+		switch n {
+		case "ask":
+			return base + "/ask"
+		case "show":
+			return base + "/show"
+		case "job", "jobs":
+			return base + "/jobs"
+		default:
+			return base + "/news"
+		}
+	default:
+		return base
+	}
+}
+
+// filterHNTypesLocal filters only when nodes include known HN item types; otherwise returns input unmodified.
+func filterHNTypesLocal(items []model.WithScore, nodes []string) []model.WithScore {
+	if len(nodes) == 0 {
+		return items
+	}
+	allowed := map[string]struct{}{}
+	for _, n := range nodes {
+		s := strings.ToLower(strings.TrimSpace(n))
+		switch s {
+		case "ask", "show", "job", "story":
+			allowed[s] = struct{}{}
+		}
+	}
+	if len(allowed) == 0 {
+		return items
+	}
+	out := make([]model.WithScore, 0, len(items))
+	for _, ws := range items {
+		if _, ok := allowed[strings.ToLower(ws.Item.NodeName)]; ok {
 			out = append(out, ws)
 		}
 	}

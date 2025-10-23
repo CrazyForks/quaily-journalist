@@ -9,6 +9,7 @@ type NewsItem struct {
 	URL       string    `json:"url"`
 	NodeName  string    `json:"node_name"`
 	Replies   int       `json:"replies"`
+	Points    int       `json:"points"`
 	CreatedAt time.Time `json:"created_at"`
 	Content   string    `json:"content"`
 }

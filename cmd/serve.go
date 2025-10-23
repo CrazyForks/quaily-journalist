@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"quaily-journalist/internal/ai"
+	"quaily-journalist/internal/hackernews"
 	"quaily-journalist/internal/redisclient"
 	"quaily-journalist/internal/storage"
 	"quaily-journalist/internal/v2ex"
@@ -59,6 +60,40 @@ var serveCmd = &cobra.Command{
 			Interval: interval,
 		}
 
+		// Hacker News collector setup: use HN channel nodes directly as lists
+		hnc := hackernews.NewClient(cfg.Sources.HN.BaseAPI)
+		hnInterval, err := time.ParseDuration(cfg.Sources.HN.FetchInterval)
+		if err != nil {
+			return err
+		}
+		// Gather union of nodes for HN channels; treat them as lists directly
+		hnNodeSet := map[string]struct{}{}
+		for _, ch := range cfg.Newsletters.Channels {
+			if strings.ToLower(ch.Source) == "hackernews" {
+				for _, n := range ch.Nodes {
+					n = strings.ToLower(strings.TrimSpace(n))
+					if n == "" {
+						continue
+					}
+					hnNodeSet[n] = struct{}{}
+				}
+			}
+		}
+		hnLists := make([]string, 0, len(hnNodeSet))
+		for n := range hnNodeSet {
+			hnLists = append(hnLists, n)
+		}
+		if len(hnLists) == 0 {
+			hnLists = []string{"top"}
+		}
+		hnCollector := &worker.HNCollector{
+			Client:       hnc,
+			Store:        store,
+			Lists:        hnLists,
+			Interval:     hnInterval,
+			LimitPerList: 64,
+		}
+
 		var summarizer ai.Summarizer
 		if cfg.OpenAI.APIKey != "" {
 			summarizer = ai.NewOpenAI(ai.Config{APIKey: cfg.OpenAI.APIKey, Model: cfg.OpenAI.Model, BaseURL: cfg.OpenAI.BaseURL})
@@ -83,6 +118,10 @@ var serveCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("invalid item_skip_duration for channel %s: %w", ch.Name, err)
 			}
+			baseURL := cfg.Sources.V2EX.BaseURL
+			if strings.ToLower(ch.Source) == "hackernews" {
+				baseURL = "https://news.ycombinator.com"
+			}
 			builders = append(builders, &worker.NewsletterBuilder{
 				Store:         store,
 				Source:        strings.ToLower(ch.Source),
@@ -96,14 +135,14 @@ var serveCmd = &cobra.Command{
 				SkipDuration:  sd,
 				Preface:       ch.Template.Preface,
 				Postscript:    ch.Template.Postscript,
-				BaseURL:       cfg.Sources.V2EX.BaseURL,
+				BaseURL:       baseURL,
 				Language:      ch.Language,
 				Summarizer:    summarizer,
 				TitleTemplate: ch.Template.Title,
 			})
 		}
 
-		ws := []worker.Worker{collector}
+		ws := []worker.Worker{collector, hnCollector}
 		ws = append(ws, builders...)
 		mgr := worker.NewManager(ws...)
 		ctx, cancel := context.WithCancel(context.Background())

@@ -19,9 +19,16 @@ type V2EXConfig struct {
 	FetchInterval string `mapstructure:"fetch_interval"` // duration string, e.g., "5m"
 }
 
+// HackerNewsConfig controls the Hacker News data source.
+type HackerNewsConfig struct {
+	BaseAPI       string `mapstructure:"base_api"`       // API base, defaults to https://hacker-news.firebaseio.com/v0
+	FetchInterval string `mapstructure:"fetch_interval"` // duration string, e.g., "10m"
+}
+
 // DataSources groups available collectors.
 type DataSources struct {
-	V2EX V2EXConfig `mapstructure:"v2ex"`
+	V2EX V2EXConfig       `mapstructure:"v2ex"`
+	HN   HackerNewsConfig `mapstructure:"hackernews"`
 }
 
 // OpenAIConfig holds OpenAI settings.
@@ -86,6 +93,12 @@ func (c *Config) FillDefaults() {
 	}
 	if c.Sources.V2EX.FetchInterval == "" {
 		c.Sources.V2EX.FetchInterval = "10m"
+	}
+	if c.Sources.HN.BaseAPI == "" {
+		c.Sources.HN.BaseAPI = "https://hacker-news.firebaseio.com/v0"
+	}
+	if c.Sources.HN.FetchInterval == "" {
+		c.Sources.HN.FetchInterval = "10m"
 	}
 	if c.Newsletters.Frequency == "" {
 		c.Newsletters.Frequency = "daily"

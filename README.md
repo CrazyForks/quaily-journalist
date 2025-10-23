@@ -1,6 +1,6 @@
 # Quaily Journalist
 
-Collect, score, and publish Markdown newsletters from V2EX topics. Quaily Journalist runs a small worker that polls V2EX nodes, ranks posts using a Hacker‑News‑like formula, stores them in Redis, and periodically renders channel‑specific Markdown files (daily/weekly) using a simple template.
+Collect, score, and publish Markdown newsletters from V2EX and Hacker News. Quaily Journalist runs small workers that poll sources (V2EX nodes, Hacker News lists derived from channel nodes), rank posts using a Hacker‑News‑like formula, store them in Redis, and periodically render channel‑specific Markdown files (daily/weekly) using a simple template.
 
 Use it to generate a daily or weekly digest you can post, email, or archive.
 
@@ -9,6 +9,7 @@ Use it to generate a daily or weekly digest you can post, email, or archive.
 ## Features
 
 - V2EX collector by node with configurable poll interval
+- Hacker News collector by list (top/new/best/ask/show/job)
 - HN‑like time‑decayed scoring using replies and post age
 - Redis storage with sensible TTLs and period ZSETs (daily, weekly)
 - Channel builder per source with filters, min/top thresholds, and skip logic
@@ -88,6 +89,9 @@ sources:
     token: ""      # Optional
     base_url: "https://www.v2ex.com"
     fetch_interval: "10m"
+  hackernews:
+    base_api: "https://hacker-news.firebaseio.com/v0"
+    fetch_interval: "10m"
 
 newsletters:
   output_dir: "./out"
@@ -144,18 +148,24 @@ sudo journalctl -u quaily-journalist -f
 - Cobra initializes Viper, loads `config.yaml` and env overrides.
 - Commands create a Redis connection via `internal/redisclient`.
 - Workers:
-  - Collector: polls union of `channels[].nodes` for source `v2ex`, skips zero‑reply topics, computes score, stores into ZSETs per period (daily `YYYY‑MM‑DD` UTC and weekly) with item JSON and TTL.
+  - Collector: 
+    - V2EX: polls union of `channels[].nodes` for source `v2ex`, skips zero‑reply topics, computes score, stores into ZSETs per period (daily `YYYY‑MM‑DD` UTC and weekly) with item JSON and TTL.
+    - Hacker News: derives lists from the union of HN channel nodes (e.g., `ask`, `show`, `job`, or `story` → `top/best/new`) and polls those endpoints; computes score from comment count and age; stores into the same period ZSETs under source `hackernews`.
   - Builder (per channel): filters by nodes and skip markers, enforces `min_items`/`top_n`, renders via `internal/newsletter/newsletter.tmpl`, writes file, and marks published + skipped.
 
 ## Data Flow and Keys
 
-- Collector (≈10m): V2EX API → normalize → score → `ZADD news:source:v2ex:period:<YYYY-MM-DD>` and `SET news:item:v2ex:<id>`
+- Collector (≈10m):
+  - V2EX API → normalize → score → `ZADD news:source:v2ex:period:<YYYY-MM-DD>` and `SET news:item:v2ex:<id>`
+  - Hacker News API → normalize → score → `ZADD news:source:hackernews:period:<YYYY-MM-DD>` and `SET news:item:hackernews:<id>`
 - Builder (≈30m): `ZREVRANGE` → filter nodes/skip → threshold → template render → write file → mark published + skipped
 
 Sample keys (for 2025‑10‑23):
 
 - `news:item:v2ex:123456` — JSON of the topic (7‑day TTL)
 - `news:source:v2ex:period:2025-10-23` — ZSET of IDs with scores
+- `news:item:hackernews:4201337` — JSON of the HN item (7‑day TTL)
+- `news:source:hackernews:period:2025-10-23` — ZSET of IDs with scores
 - `news:published:v2ex_daily_digest:2025-10-23` — flag for published period
 - `news:skip:v2ex_daily_digest:123456` — skip marker (e.g., 72h TTL)
 
@@ -163,7 +173,7 @@ Sample keys (for 2025‑10‑23):
 
 ```
 cmd/                 # Cobra commands (root + subcommands)
-internal/            # Non-public packages (config, v2ex client, storage, newsletter)
+internal/            # Non-public packages (config, v2ex/hn clients, storage, newsletter)
 worker/              # Long-running workers (collector, builder, manager)
 configs/             # Examples (e.g., systemd unit)
 config.yaml          # Application configuration
@@ -250,3 +260,17 @@ The following guidelines apply to contributors and automated agents working in t
 - Example unit: `configs/quaily-journalist.service.example`.
 - Ensure the binary path and working directory match your deployment.
 - Newsletters are written to `newsletters.output_dir/<channel_name>/:frequency-YYYYMMDD.md` (UTF‑8).
+    - name: "hn_daily_digest"
+      source: "hackernews"
+      # HN nodes are the lists to poll: ["top", "new", "best", "ask", "show", "job"]
+      # Optionally include item types (ask/show/job/story) to restrict what the builder includes.
+      nodes: ["top", "best", "new"]
+      frequency: "daily"
+      top_n: 20
+      min_items: 5
+      item_skip_duration: "72h"
+      language: "English"  # Language used for AI outputs
+      template:
+        title: "Hacker News Daily <YYYY-MM-DD>"
+        preface: "Today’s HN highlights."
+        postscript: "Brought to you by Quaily Journalist."
