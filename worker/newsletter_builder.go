@@ -1,0 +1,213 @@
+package worker
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"quaily-journalist/internal/model"
+	"quaily-journalist/internal/newsletter"
+	"quaily-journalist/internal/storage"
+)
+
+type NewsletterBuilder struct {
+	Store        *storage.RedisStore
+	Source       string
+	Channel      string
+	Frequency    string
+	TopN         int
+	MinItems     int
+	OutputDir    string
+	Interval     time.Duration // how often to evaluate/publish
+	Nodes        []string
+	SkipDuration time.Duration
+	Preface      string
+	Postscript   string
+	BaseURL      string // for node links
+}
+
+func (w *NewsletterBuilder) Start(ctx context.Context) error {
+	if w.Interval <= 0 {
+		w.Interval = 30 * time.Minute
+	}
+	// ensure base/channel directory exists
+	channelDir := filepath.Join(w.OutputDir, w.Channel)
+	if err := os.MkdirAll(channelDir, 0o755); err != nil {
+		return err
+	}
+	// run immediately then on interval
+	w.runOnce(ctx)
+
+	t := time.NewTicker(w.Interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-t.C:
+			w.runOnce(ctx)
+		}
+	}
+}
+
+func (w *NewsletterBuilder) runOnce(ctx context.Context) {
+	period := periodKey(w.Frequency, time.Now().UTC())
+	published, err := w.Store.IsPublished(ctx, w.Channel, period)
+	if err != nil {
+		log.Printf("builder: check published err=%v", err)
+		return
+	}
+	if published {
+		return
+	}
+
+	// Fetch more than TopN so filtering by nodes still leaves enough.
+	fetchN := w.TopN * 5
+	if fetchN < w.TopN { // overflow safety, though unlikely
+		fetchN = w.TopN
+	}
+	items, err := w.Store.TopNews(ctx, w.Source, period, fetchN)
+	if err != nil {
+		log.Printf("builder: fetch top news err=%v", err)
+		return
+	}
+	items = filterByNodes(items, w.Nodes)
+	// filter out zero-reply or zero-score items (safety, though collector already skips)
+	nz := make([]model.WithScore, 0, len(items))
+	for _, ws := range items {
+		if ws.Item.Replies > 0 && ws.Score > 0 {
+			nz = append(nz, ws)
+		}
+	}
+	items = nz
+	// filter by skip marks
+	filtered := make([]model.WithScore, 0, len(items))
+	for _, ws := range items {
+		skip, err := w.Store.IsSkipped(ctx, w.Channel, ws.Item.ID)
+		if err != nil {
+			log.Printf("builder: skip-check err id=%s err=%v", ws.Item.ID, err)
+			continue
+		}
+		if !skip {
+			filtered = append(filtered, ws)
+		}
+	}
+	items = filtered
+	if len(items) < w.MinItems {
+		return
+	}
+	md := w.renderMarkdown(period, items)
+	name := w.filename(period)
+	path := filepath.Join(w.OutputDir, w.Channel, name)
+	if err := os.WriteFile(path, []byte(md), 0o644); err != nil {
+		log.Printf("builder: write file err=%v", err)
+		return
+	}
+	if err := w.Store.MarkPublished(ctx, w.Channel, period); err != nil {
+		log.Printf("builder: mark published err=%v", err)
+		return
+	}
+	// mark items as skipped for the configured duration
+	for _, ws := range items[:min(len(items), w.TopN)] {
+		if err := w.Store.MarkSkipped(ctx, w.Channel, ws.Item.ID, w.SkipDuration); err != nil {
+			log.Printf("builder: mark skipped err id=%s err=%v", ws.Item.ID, err)
+		}
+	}
+	log.Printf("builder: published %s with %d items", path, len(items))
+}
+
+func (w *NewsletterBuilder) filename(period string) string {
+	// Always use ":frequency-YYYYMMDD.md" as filename
+	dateName := time.Now().UTC().Format("20060102")
+	return fmt.Sprintf("%s-%s.md", strings.ToLower(w.Frequency), dateName)
+}
+
+func (w *NewsletterBuilder) renderMarkdown(period string, items []model.WithScore) string {
+	// Build template data
+	postTitle := fmt.Sprintf("%s — %s", w.Channel, period)
+	// Slug is always the filename without ".md"
+	name := w.filename(period)
+	slug := strings.TrimSuffix(name, ".md")
+	data := newsletter.Data{
+		Title:      postTitle,
+		Slug:       slug,
+		Datetime:   time.Now().UTC().Format("2006-01-02 15:04"),
+		Preface:    w.Preface,
+		Postscript: w.Postscript,
+		Items:      make([]newsletter.Item, 0, min(len(items), w.TopN)),
+	}
+	maxN := min(len(items), w.TopN)
+	for i := 0; i < maxN; i++ {
+		it := items[i].Item
+		desc := summarize(it)
+		nodeURL := strings.TrimRight(w.BaseURL, "/") + "/go/" + it.NodeName
+		data.Items = append(data.Items, newsletter.Item{
+			Title:       it.Title,
+			URL:         it.URL,
+			NodeName:    it.NodeName,
+			NodeURL:     nodeURL,
+			Description: desc,
+			Replies:     it.Replies,
+			Created:     it.CreatedAt.UTC().Format("2006-01-02 15:04"),
+		})
+	}
+	out, err := newsletter.Render(data)
+	if err != nil {
+		log.Printf("builder: render template err=%v", err)
+		return ""
+	}
+	if !utf8.ValidString(out) {
+		out = string([]rune(out))
+	}
+	return out
+}
+
+func escapeMD(s string) string {
+	replacer := strings.NewReplacer("[", "\\[", "]", "\\]", "(", "\\(", ")", "\\)")
+	return replacer.Replace(s)
+}
+
+func summarize(it model.NewsItem) string {
+	// Prefer content; fallback to title as a one-liner
+	text := strings.TrimSpace(it.Content)
+	if text == "" {
+		text = it.Title
+	}
+	// collapse newlines and trim
+	text = strings.ReplaceAll(text, "\n", " ")
+	// ensure we cut on rune boundaries for valid UTF-8
+	r := []rune(text)
+	if len(r) > 200 {
+		text = string(r[:200]) + "…"
+	}
+	return text
+}
+
+func filterByNodes(items []model.WithScore, nodes []string) []model.WithScore {
+	if len(nodes) == 0 {
+		return items
+	}
+	set := map[string]struct{}{}
+	for _, n := range nodes {
+		set[strings.TrimSpace(strings.ToLower(n))] = struct{}{}
+	}
+	out := make([]model.WithScore, 0, len(items))
+	for _, it := range items {
+		if _, ok := set[strings.ToLower(it.Item.NodeName)]; ok {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

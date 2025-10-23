@@ -1,0 +1,15 @@
+[Unit]
+Description=Quaily Journalist Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/quaily-journalist
+ExecStart=%h/quaily-journalist/bin/quaily-journalist serve --config %h/quaily-journalist/config.yaml
+Restart=on-failure
+Environment=QUAILY_REDIS_ADDR=127.0.0.1:6379
+# Environment=QUAILY_V2EX_TOKEN=your_token_here
+
+[Install]
+WantedBy=multi-user.target
+

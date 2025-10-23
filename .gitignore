@@ -1,0 +1,5 @@
+config.local.yaml
+config.yaml
+.env
+out/
+quaily-journalist

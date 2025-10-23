@@ -1,0 +1,23 @@
+---
+title: "{{ .Title }}"
+slug: {{ .Slug }}
+datetime: {{ .Datetime }}
+---
+
+{{ if .Preface }}
+> {{ .Preface }}
+{{- end }}
+
+{{ range .Items }}
+## [{{ .Title }}]({{ .URL }})
+
+{{ .Description }}
+
+* {{ .Replies }} Replies - [{{ .NodeName }}]({{ .NodeURL }}) - {{ .Created }}*
+{{ end -}}
+
+---
+
+{{ if .Postscript }}
+> {{ .Postscript }}
+{{ end }}
