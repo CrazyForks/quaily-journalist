@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"quaily-journalist/internal/ai"
 	"quaily-journalist/internal/model"
 	"quaily-journalist/internal/newsletter"
 	"quaily-journalist/internal/redisclient"
@@ -37,6 +38,7 @@ var generateCmd = &cobra.Command{
 			Nodes      []string
 			Preface    string
 			Postscript string
+			Language   string
 		}
 		for i := range cfg.Newsletters.Channels {
 			c := cfg.Newsletters.Channels[i]
@@ -51,6 +53,7 @@ var generateCmd = &cobra.Command{
 					Nodes      []string
 					Preface    string
 					Postscript string
+					Language   string
 				}{
 					Name:       c.Name,
 					Source:     strings.ToLower(c.Source),
@@ -61,6 +64,7 @@ var generateCmd = &cobra.Command{
 					Nodes:      c.Nodes,
 					Preface:    c.Preface,
 					Postscript: c.Postscript,
+					Language:   c.Language,
 				}
 				break
 			}
@@ -125,19 +129,43 @@ var generateCmd = &cobra.Command{
 			Postscript: ch.Postscript,
 			Items:      make([]newsletter.Item, 0, len(items)),
 		}
+		// Setup summarizer
+		var summarizer ai.Summarizer
+		if cfg.OpenAI.APIKey != "" {
+			summarizer = ai.NewOpenAI(ai.Config{APIKey: cfg.OpenAI.APIKey, Model: cfg.OpenAI.Model, BaseURL: cfg.OpenAI.BaseURL})
+		}
+		// Use base context; AI client enforces per-call timeouts
+		ctxAI := context.Background()
 		for _, ws := range items {
 			it := ws.Item
 			nodeURL := strings.TrimRight(baseURL, "/") + "/go/" + it.NodeName
+			var desc string
+			if summarizer != nil {
+				if d, err := summarizer.SummarizeItem(ctxAI, it.Title, it.Content, ch.Language); err == nil && d != "" {
+					desc = d
+				}
+			}
 			nd.Items = append(nd.Items, newsletter.Item{
 				Title:       it.Title,
 				URL:         it.URL,
 				NodeName:    it.NodeName,
 				NodeURL:     nodeURL,
-				Description: summarizeLocal(it),
+				Description: desc,
 				Replies:     it.Replies,
 				Created:     it.CreatedAt.UTC().Format("2006-01-02 15:04"),
 			})
 		}
+		// Post-level summary: prefer AI, fallback to heuristic to ensure non-empty
+		raw := make([]model.NewsItem, 0, len(items))
+		for _, ws := range items {
+			raw = append(raw, ws.Item)
+		}
+		if summarizer != nil {
+			if s, err := summarizer.SummarizePost(ctxAI, raw, ch.Language); err == nil {
+				nd.Summary = strings.TrimSpace(s)
+			}
+		}
+
 		content, err := newsletter.Render(nd)
 		if err != nil {
 			return err
@@ -181,23 +209,4 @@ func filterByNodesLocal(items []model.WithScore, nodes []string) []model.WithSco
 		}
 	}
 	return out
-}
-
-// renderMarkdownLocal produces a simple markdown similar to builder.
-func escapeMDLocal(s string) string {
-	replacer := strings.NewReplacer("[", "\\[", "]", "\\]", "(", "\\(", ")", "\\)")
-	return replacer.Replace(s)
-}
-
-func summarizeLocal(it model.NewsItem) string {
-	text := strings.TrimSpace(it.Content)
-	if text == "" {
-		text = it.Title
-	}
-	text = strings.ReplaceAll(text, "\n", " ")
-	r := []rune(text)
-	if len(r) > 200 {
-		text = string(r[:200]) + "…"
-	}
-	return text
 }

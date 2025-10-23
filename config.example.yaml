@@ -1,0 +1,32 @@
+app:
+  log_level: "info"
+
+redis:
+  addr: "127.0.0.1:6379"
+  password: ""
+  db: 0
+
+openai:
+  api_key: ""
+  model: "gpt-4o-mini"
+  base_url: ""  # optional, e.g., https://api.openai.com/v1
+
+sources:
+  v2ex:
+    token: ""      # Optional
+    base_url: "https://www.v2ex.com"
+    fetch_interval: "10m"
+
+newsletters:
+  output_dir: "./out"
+  channels:
+    - name: "v2ex_daily_digest"
+      source: "v2ex"
+      nodes: ["crypto", "solana", "create"]
+      frequency: "daily"
+      top_n: 20
+      min_items: 5
+      item_skip_duration: "72h"
+      language: "English"
+      preface: "Your daily V2EX highlights."
+      postscript: "Brought to you by Quaily Journalist."

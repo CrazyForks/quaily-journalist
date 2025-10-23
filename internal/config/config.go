@@ -8,7 +8,6 @@ type AppConfig struct {
 // RedisConfig holds redis connection settings.
 type RedisConfig struct {
 	Addr     string `mapstructure:"addr"`
-	Username string `mapstructure:"username"`
 	Password string `mapstructure:"password"`
 	DB       int    `mapstructure:"db"`
 }
@@ -23,6 +22,13 @@ type V2EXConfig struct {
 // DataSources groups available collectors.
 type DataSources struct {
 	V2EX V2EXConfig `mapstructure:"v2ex"`
+}
+
+// OpenAIConfig holds OpenAI settings.
+type OpenAIConfig struct {
+	APIKey  string `mapstructure:"api_key"`
+	Model   string `mapstructure:"model"`
+	BaseURL string `mapstructure:"base_url"`
 }
 
 // NewsletterConfig controls publication logic.
@@ -46,6 +52,7 @@ type ChannelConfig struct {
 	ItemSkipDuration string   `mapstructure:"item_skip_duration"` // e.g., "72h"
 	Preface          string   `mapstructure:"preface"`
 	Postscript       string   `mapstructure:"postscript"`
+	Language         string   `mapstructure:"language"` // e.g., "English", "中文", affects AI output
 }
 
 // Config is the top-level configuration structure.
@@ -53,6 +60,7 @@ type Config struct {
 	App         AppConfig         `mapstructure:"app"`
 	Redis       RedisConfig       `mapstructure:"redis"`
 	Sources     DataSources       `mapstructure:"sources"`
+	OpenAI      OpenAIConfig      `mapstructure:"openai"`
 	Newsletters NewslettersConfig `mapstructure:"newsletters"`
 }
 
@@ -99,6 +107,9 @@ func (c *Config) FillDefaults() {
 		}
 		if ch.ItemSkipDuration == "" {
 			ch.ItemSkipDuration = "72h"
+		}
+		if ch.Language == "" {
+			ch.Language = "English"
 		}
 	}
 }

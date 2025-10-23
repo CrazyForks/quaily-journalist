@@ -4,6 +4,8 @@ Collect, score, and publish Markdown newsletters from V2EX topics. Quaily Journa
 
 Use it to generate a daily or weekly digest you can post, email, or archive.
 
+> This is a golang repository, always use Tab for code indentation.
+
 ## Features
 
 - V2EX collector by node with configurable poll interval
@@ -11,15 +13,16 @@ Use it to generate a daily or weekly digest you can post, email, or archive.
 - Redis storage with sensible TTLs and period ZSETs (daily, weekly)
 - Channel builder per source with filters, min/top thresholds, and skip logic
 - Markdown rendering via a text/template (easy to customize)
+- AI-powered summaries (OpenAI) for item descriptions and a post summary
 - CLI with `serve`, `generate`, and `redis ping`
-- Configurable via YAML and `QUAILY_*` environment variables
+- Configurable via YAML config only (no env overrides)
 - Systemd‑friendly service unit example
 
 ## Quick Start
 
 Prerequisites: Go 1.21+, Redis (local or remote).
 
-1) Copy and edit `config.yaml` to your environment. At minimum, set Redis and pick V2EX nodes.
+1) Copy and edit `config.yaml` to your environment. At minimum, set Redis and pick V2EX nodes. To enable AI summaries, set the OpenAI section in the config file.
 
 2) Verify Redis connectivity:
 
@@ -64,7 +67,7 @@ Quaily Journalist reads `config.yaml` from one of:
 
 You can also pass `--config /path/to/config.yaml`.
 
-Example (redacted) configuration:
+Example (redacted) configuration (config file only; no env overrides):
 
 ```yaml
 app:
@@ -72,13 +75,17 @@ app:
 
 redis:
   addr: "127.0.0.1:6379"
-  username: ""
-  password: ""    # Prefer env var QUAILY_REDIS_PASSWORD
+  password: ""
   db: 0
+
+openai:
+  api_key: ""
+  model: "gpt-4o-mini"
+  base_url: ""  # optional, e.g., https://api.openai.com/v1
 
 sources:
   v2ex:
-    token: ""      # Optional; or use env QUAILY_SOURCES_V2EX_TOKEN / QUAILY_V2EX_TOKEN
+    token: ""      # Optional
     base_url: "https://www.v2ex.com"
     fetch_interval: "10m"
 
@@ -92,22 +99,14 @@ newsletters:
       top_n: 20
       min_items: 5
       item_skip_duration: "72h"
+      language: "English"  # Language used for AI outputs
       preface: "Your daily V2EX highlights."
       postscript: "Brought to you by Quaily Journalist."
 ```
 
-### Environment Variables
+### Configuration Source
 
-All config keys support env overrides via Viper with prefix `QUAILY_` and dot‑to‑underscore mapping. Examples:
-
-- `QUAILY_REDIS_ADDR`, `QUAILY_REDIS_USERNAME`, `QUAILY_REDIS_PASSWORD`, `QUAILY_REDIS_DB`
-- `QUAILY_SOURCES_V2EX_TOKEN`, `QUAILY_SOURCES_V2EX_BASE_URL`, `QUAILY_SOURCES_V2EX_FETCH_INTERVAL`
-- `QUAILY_NEWSLETTERS_OUTPUT_DIR`
-
-Convenience bindings also exist:
-
-- `QUAILY_V2EX_TOKEN` (same as `sources.v2ex.token`)
-- `QUAILY_V2EX_NODES` (comma‑separated list used to seed node selection)
+Quaily Journalist reads configuration from YAML files only; environment variables are not used.
 
 ## CLI
 
@@ -124,7 +123,7 @@ Make targets:
 
 ## Run as a Service (systemd)
 
-An example unit file is provided at `configs/quaily-journalist.service.example`. Update the `WorkingDirectory` and `ExecStart` to match your deployment, and set environment variables for secrets.
+An example unit file is provided at `configs/quaily-journalist.service.example`. Update the `WorkingDirectory` and `ExecStart` to match your deployment. Secrets and settings are read from the config file.
 
 ```bash
 sudo systemctl enable quaily-journalist
@@ -136,6 +135,7 @@ sudo journalctl -u quaily-journalist -f
 
 - Files are UTF‑8 Markdown under `newsletters.output_dir/<channel>/`
 - Daily slug format: `daily-YYYYMMDD.md` (e.g., `out/v2ex_daily_digest/daily-20251023.md`)
+- Frontmatter includes `summary`, and the same summary appears near the top of content
 
 ## Architecture
 
@@ -185,13 +185,13 @@ README.md            # This file
 
 ## Security Notes
 
-- Do not commit secrets. Use env overrides like `QUAILY_REDIS_PASSWORD`, `QUAILY_SOURCES_V2EX_TOKEN`
+- Do not commit secrets. Place secrets in a local `config.yaml` located in one of the supported search paths.
 - Prefer config search paths and local untracked variants
 
 ## Troubleshooting
 
 - Config not found: pass `--config /path/to/config.yaml` or place it under a search path
-- Redis auth/connection errors: validate `QUAILY_REDIS_*` and network access
+- Redis auth/connection errors: validate your `redis` section and network access
 - No newsletter generated: ensure `min_items` is met; reduce `min_items` or wait for more posts; use `generate` to force a render
 - Empty sections: check `nodes` are correct for V2EX and that the collector interval elapsed
 
@@ -239,13 +239,12 @@ The following guidelines apply to contributors and automated agents working in t
 - PRs: include summary (What/Why), linked issues, and CLI output when helpful (e.g., ping result). Keep PRs small and focused.
 
 ### Security & Configuration Tips
-- Do not commit secrets. Use env overrides: `QUAILY_REDIS_ADDR`, `QUAILY_REDIS_PASSWORD`, etc.
+- Do not commit secrets. Use the config file only (no env overrides).
 - Config search paths: project root, `$HOME/.config/quaily-journalist/`, `./configs/`.
 - Example `config.yaml` provided; create a local variant if needed.
-- Channels live under `newsletters.channels[]` with fields: `name`, `source`, `nodes`, `frequency`, `top_n`, `min_items`, `output_dir`, `item_skip_duration`, `preface`, `postscript`.
+- Channels live under `newsletters.channels[]` with fields: `name`, `source`, `nodes`, `frequency`, `top_n`, `min_items`, `output_dir`, `item_skip_duration`, `language`, `preface`, `postscript`.
 
 ### Service (systemd)
 - Example unit: `configs/quaily-journalist.service.example`.
 - Ensure the binary path and working directory match your deployment.
 - Newsletters are written to `newsletters.output_dir/<channel_name>/:frequency-YYYYMMDD.md` (UTF‑8).
-

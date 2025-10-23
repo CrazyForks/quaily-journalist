@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"quaily-journalist/internal/ai"
 	"quaily-journalist/internal/model"
 	"quaily-journalist/internal/newsletter"
 	"quaily-journalist/internal/storage"
@@ -29,6 +30,8 @@ type NewsletterBuilder struct {
 	Preface      string
 	Postscript   string
 	BaseURL      string // for node links
+	Language     string
+	Summarizer   ai.Summarizer
 }
 
 func (w *NewsletterBuilder) Start(ctx context.Context) error {
@@ -141,10 +144,17 @@ func (w *NewsletterBuilder) renderMarkdown(period string, items []model.WithScor
 		Postscript: w.Postscript,
 		Items:      make([]newsletter.Item, 0, min(len(items), w.TopN)),
 	}
+	// Use a base context and rely on per-call timeouts inside the AI client
+	ctxAI := context.Background()
 	maxN := min(len(items), w.TopN)
 	for i := 0; i < maxN; i++ {
 		it := items[i].Item
-		desc := summarize(it)
+		var desc string
+		if w.Summarizer != nil {
+			if d, err := w.Summarizer.SummarizeItem(ctxAI, it.Title, it.Content, w.Language); err == nil && d != "" {
+				desc = d
+			}
+		}
 		nodeURL := strings.TrimRight(w.BaseURL, "/") + "/go/" + it.NodeName
 		data.Items = append(data.Items, newsletter.Item{
 			Title:       it.Title,
@@ -155,6 +165,26 @@ func (w *NewsletterBuilder) renderMarkdown(period string, items []model.WithScor
 			Replies:     it.Replies,
 			Created:     it.CreatedAt.UTC().Format("2006-01-02 15:04"),
 		})
+	}
+	// Post-level summary: prefer AI, fallback to heuristic to ensure non-empty
+	raw := make([]model.NewsItem, 0, maxN)
+	for i := 0; i < maxN; i++ {
+		raw = append(raw, items[i].Item)
+	}
+	if w.Summarizer != nil {
+		if s, err := w.Summarizer.SummarizePost(ctxAI, raw, w.Language); err == nil {
+			data.Summary = strings.TrimSpace(s)
+		}
+	}
+	if strings.TrimSpace(data.Summary) == "" {
+		// Fallback summary built from titles if AI not configured or returned empty
+		titles := make([]string, 0, min(3, len(raw)))
+		for i := 0; i < min(3, len(raw)); i++ {
+			titles = append(titles, raw[i].Title)
+		}
+		if len(titles) > 0 {
+			data.Summary = fmt.Sprintf("Top highlights: %s.", strings.Join(titles, ", "))
+		}
 	}
 	out, err := newsletter.Render(data)
 	if err != nil {
@@ -167,26 +197,7 @@ func (w *NewsletterBuilder) renderMarkdown(period string, items []model.WithScor
 	return out
 }
 
-func escapeMD(s string) string {
-	replacer := strings.NewReplacer("[", "\\[", "]", "\\]", "(", "\\(", ")", "\\)")
-	return replacer.Replace(s)
-}
-
-func summarize(it model.NewsItem) string {
-	// Prefer content; fallback to title as a one-liner
-	text := strings.TrimSpace(it.Content)
-	if text == "" {
-		text = it.Title
-	}
-	// collapse newlines and trim
-	text = strings.ReplaceAll(text, "\n", " ")
-	// ensure we cut on rune boundaries for valid UTF-8
-	r := []rune(text)
-	if len(r) > 200 {
-		text = string(r[:200]) + "…"
-	}
-	return text
-}
+// no local summary fallback; descriptions remain empty when AI is not configured
 
 func filterByNodes(items []model.WithScore, nodes []string) []model.WithScore {
 	if len(nodes) == 0 {

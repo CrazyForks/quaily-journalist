@@ -2,10 +2,16 @@
 title: "{{ .Title }}"
 slug: {{ .Slug }}
 datetime: {{ .Datetime }}
+summary: |-
+  {{ .Summary }}
 ---
 
 {{ if .Preface }}
 > {{ .Preface }}
+{{- end }}
+
+{{ if .Summary }}
+{{ .Summary }}
 {{- end }}
 
 {{ range .Items }}

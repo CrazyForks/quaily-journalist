@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"quaily-journalist/internal/config"
 
@@ -34,11 +33,6 @@ func init() {
 
 	// Global flags
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ./config.yaml)")
-
-	// Environment overrides: QUAILY_FOO=bar for foo
-	viper.SetEnvPrefix("QUAILY")
-	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	viper.AutomaticEnv()
 }
 
 func initConfig() {

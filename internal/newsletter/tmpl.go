@@ -20,6 +20,7 @@ type Data struct {
 	Title      string
 	Slug       string
 	Datetime   string
+	Summary    string
 	Preface    string
 	Postscript string
 	Items      []Item

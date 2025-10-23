@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"quaily-journalist/internal/ai"
 	"quaily-journalist/internal/redisclient"
 	"quaily-journalist/internal/storage"
 	"quaily-journalist/internal/v2ex"
@@ -58,6 +59,12 @@ var serveCmd = &cobra.Command{
 			Interval: interval,
 		}
 
+		// Prepare AI summarizer (optional)
+		var summarizer ai.Summarizer
+		if cfg.OpenAI.APIKey != "" {
+			summarizer = ai.NewOpenAI(ai.Config{APIKey: cfg.OpenAI.APIKey, Model: cfg.OpenAI.Model, BaseURL: cfg.OpenAI.BaseURL})
+		}
+
 		// Newsletter builders (one per channel)
 		var builders []worker.Worker
 		for _, ch := range cfg.Newsletters.Channels {
@@ -79,6 +86,8 @@ var serveCmd = &cobra.Command{
 				Preface:      ch.Preface,
 				Postscript:   ch.Postscript,
 				BaseURL:      cfg.Sources.V2EX.BaseURL,
+				Language:     ch.Language,
+				Summarizer:   summarizer,
 			})
 		}
 

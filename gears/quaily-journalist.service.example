@@ -7,9 +7,7 @@ Type=simple
 WorkingDirectory=%h/quaily-journalist
 ExecStart=%h/quaily-journalist/bin/quaily-journalist serve --config %h/quaily-journalist/config.yaml
 Restart=on-failure
-Environment=QUAILY_REDIS_ADDR=127.0.0.1:6379
-# Environment=QUAILY_V2EX_TOKEN=your_token_here
+# Configuration is read from YAML files only; no env overrides are used.
 
 [Install]
 WantedBy=multi-user.target
-
