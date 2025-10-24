@@ -13,6 +13,7 @@ import (
 
 	"quaily-journalist/internal/ai"
 	"quaily-journalist/internal/hackernews"
+	"quaily-journalist/internal/quaily"
 	"quaily-journalist/internal/redisclient"
 	"quaily-journalist/internal/storage"
 	"quaily-journalist/internal/v2ex"
@@ -112,6 +113,16 @@ var serveCmd = &cobra.Command{
 			summarizer = ai.NewOpenAI(ai.Config{APIKey: cfg.OpenAI.APIKey, Model: cfg.OpenAI.Model, BaseURL: cfg.OpenAI.BaseURL})
 		}
 
+		// Quaily client (optional)
+		var qcli *quaily.Client
+		if strings.TrimSpace(cfg.Quaily.BaseURL) != "" && strings.TrimSpace(cfg.Quaily.APIKey) != "" {
+			tm := 10 * time.Second
+			if d, err := time.ParseDuration(cfg.Quaily.Timeout); err == nil && d > 0 {
+				tm = d
+			}
+			qcli = quaily.New(cfg.Quaily.BaseURL, cfg.Quaily.APIKey, tm)
+		}
+
 		// Cache human-friendly node titles at init (best-effort)
 		for _, n := range nodes {
 			ctxNode, cancelNode := context.WithTimeout(context.Background(), 5*time.Second)
@@ -152,6 +163,7 @@ var serveCmd = &cobra.Command{
 				Language:      ch.Language,
 				Summarizer:    summarizer,
 				TitleTemplate: ch.Template.Title,
+				Quaily:        qcli,
 			})
 		}
 

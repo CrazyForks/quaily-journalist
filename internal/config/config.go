@@ -78,6 +78,7 @@ type Config struct {
 	Sources     DataSources       `mapstructure:"sources"`
 	OpenAI      OpenAIConfig      `mapstructure:"openai"`
 	Newsletters NewslettersConfig `mapstructure:"newsletters"`
+	Quaily      QuailyConfig      `mapstructure:"quaily"`
 }
 
 // FillDefaults applies default values if not provided.
@@ -85,4 +86,11 @@ func (c *Config) FillDefaults() {
 	if c.App.LogLevel == "" {
 		c.App.LogLevel = "info"
 	}
+}
+
+// QuailyConfig holds Quaily API settings.
+type QuailyConfig struct {
+	BaseURL string `mapstructure:"base_url"`
+	APIKey  string `mapstructure:"api_key"`
+	Timeout string `mapstructure:"timeout"` // e.g., "10s"
 }

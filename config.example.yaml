@@ -11,6 +11,11 @@ openai:
   model: "gpt-4o-mini"
   base_url: "" # optional, e.g., https://api.openai.com/v1
 
+quaily:
+  base_url: "https://api.quaily.com/v1"
+  api_key: ""
+  timeout: "10s"
+
 sources:
   v2ex:
     token: "" # Optional
@@ -32,7 +37,7 @@ newsletters:
       item_skip_duration: "72h"
       language: "English"
       template:
-        title: "V2EX Daily YYYY-MM-DD"
+        title: "V2EX Daily {.CurrentDate}"
         preface: "Your daily V2EX highlights."
         postscript: "Brought to you by Quaily Journalist."
     - name: "hn_daily_digest"

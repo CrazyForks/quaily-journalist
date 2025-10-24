@@ -120,6 +120,7 @@ Quaily Journalist reads configuration from YAML files only; environment variable
 - `go run . serve` — run service (collector + builders + scheduler)
 - `go run . generate <channel>` — force‑generate today’s post for `<channel>` (writes `:output_dir/:channel/:frequency-YYYYMMDD.md` if at least `min_items` are available; ignores published/skip)
 - `go run . redis ping` — ping Redis using current config
+- `go run . publish <markdown_path> <channel_slug>` — publish a rendered Markdown file to Quaily now
 
 Make targets:
 
@@ -142,6 +143,20 @@ sudo journalctl -u quaily-journalist -f
 - Files are UTF‑8 Markdown under `newsletters.output_dir/<channel>/`
 - Daily slug format: `daily-YYYYMMDD.md` (e.g., `out/v2ex_daily_digest/daily-20251023.md`)
 - Frontmatter includes `summary`, and the same summary appears near the top of content
+
+## Quaily Publishing
+
+- Add a `quaily` block to `config.yaml` to enable auto‑publish after each render:
+
+```yaml
+quaily:
+  base_url: "https://api.quaily.com/v1"
+  api_key: "YOUR_TOKEN"
+  timeout: "10s"
+```
+
+- The `serve` command publishes to Quaily right after writing each Markdown file. It uses the file’s frontmatter as Create Post parameters, adds the Markdown body as `content`, and uses the channel name as `channel_slug`. It then calls Create Post and Publish Post.
+- Use `go run . publish <markdown_path> <channel_slug>` to manually publish a specific file.
 
 ## Architecture
 

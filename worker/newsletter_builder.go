@@ -13,6 +13,7 @@ import (
 	"quaily-journalist/internal/ai"
 	"quaily-journalist/internal/model"
 	"quaily-journalist/internal/newsletter"
+	"quaily-journalist/internal/quaily"
 	"quaily-journalist/internal/storage"
 )
 
@@ -33,6 +34,7 @@ type NewsletterBuilder struct {
 	Language      string
 	Summarizer    ai.Summarizer
 	TitleTemplate string
+	Quaily        *quaily.Client
 }
 
 func (w *NewsletterBuilder) Start(ctx context.Context) error {
@@ -135,6 +137,16 @@ func (w *NewsletterBuilder) runOnce(ctx context.Context) {
 		}
 	}
 	log.Printf("builder: published %s with %d items", path, len(items))
+	// After generating, publish to Quaily if configured
+	if w.Quaily != nil {
+		ctxPub, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := quaily.PublishMarkdownFile(ctxPub, w.Quaily, path, w.Channel); err != nil {
+			log.Printf("builder: quaily publish failed: %v", err)
+		} else {
+			log.Printf("builder: quaily publish ok for %s", path)
+		}
+	}
 }
 
 func (w *NewsletterBuilder) filename(period string) string {
