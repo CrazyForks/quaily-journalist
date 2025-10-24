@@ -153,7 +153,7 @@ var serveCmd = &cobra.Command{
 				Frequency:     strings.ToLower(ch.Frequency),
 				TopN:          ch.TopN,
 				MinItems:      ch.MinItems,
-				OutputDir:     ch.OutputDir,
+				OutputDir:     cfg.Newsletters.OutputDir,
 				Interval:      30 * time.Minute,
 				Nodes:         ch.Nodes,
 				SkipDuration:  sd,

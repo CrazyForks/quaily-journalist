@@ -108,6 +108,8 @@ newsletters:
         title: ""  # optional; default: "Digest of <channel> <YYYY-MM-DD>"
         preface: "Your daily V2EX highlights."
         postscript: "Brought to you by Quaily Journalist."
+      # Template variables supported in template fields (title/preface/postscript):
+      # - {.CurrentDate} -> YYYY-MM-DD (UTC)
 ```
 
 ### Configuration Source

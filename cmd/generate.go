@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,7 +68,7 @@ var generateCmd = &cobra.Command{
 					Frequency: strings.ToLower(c.Frequency),
 					TopN:      c.TopN,
 					MinItems:  c.MinItems,
-					OutputDir: c.OutputDir,
+					OutputDir: cfg.Newsletters.OutputDir,
 					Nodes:     c.Nodes,
 					Template: struct {
 						Title      string
@@ -86,6 +87,8 @@ var generateCmd = &cobra.Command{
 		if ch == nil {
 			return fmt.Errorf("channel not found: %s", channelName)
 		}
+
+		slog.Info("generate: generating newsletter", "channel", ch.Name, "output", ch.OutputDir)
 
 		// Prepare storage
 		rdb := redisclient.New(cfg.Redis)
@@ -160,10 +163,13 @@ var generateCmd = &cobra.Command{
 
 		// Prepare template data
 		// Determine post title: use configured template or default to "Digest of <Channel> <YYYY-MM-DD>"
+		now := time.Now()
 		postTitle := strings.TrimSpace(ch.Template.Title)
 		if postTitle == "" {
 			postTitle = fmt.Sprintf("Digest of %s %s", ch.Name, period)
 		}
+		// Expand template variables in configured title/preface/postscript
+		postTitle = newsletter.ExpandVars(postTitle, now)
 		// Filename and slug: frequency-YYYYMMDD.md
 		dateName := time.Now().UTC().Format("20060102")
 		fileName := fmt.Sprintf("%s-%s.md", ch.Frequency, dateName)
@@ -180,8 +186,8 @@ var generateCmd = &cobra.Command{
 			Title:      postTitle,
 			Slug:       slug,
 			Datetime:   time.Now().UTC().Format("2006-01-02 15:04"),
-			Preface:    ch.Template.Preface,
-			Postscript: ch.Template.Postscript,
+			Preface:    newsletter.ExpandVars(ch.Template.Preface, now),
+			Postscript: newsletter.ExpandVars(ch.Template.Postscript, now),
 			Items:      make([]newsletter.Item, 0, len(items)),
 		}
 		// Setup summarizer
@@ -245,6 +251,7 @@ var generateCmd = &cobra.Command{
 		}
 		// output path: :output_dir/:channel_name/:frequency-YYYYMMDD.md (overwrite)
 		dir := filepath.Join(ch.OutputDir, ch.Name)
+		slog.Info("generate: generating newsletter", "channel", ch.Name, "file", filepath.Join(dir, fileName))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}

@@ -158,10 +158,13 @@ func (w *NewsletterBuilder) filename(period string) string {
 func (w *NewsletterBuilder) renderMarkdown(period string, items []model.WithScore) string {
 	// Build template data
 	// Determine post title: use configured template or default to "Digest of <Channel> <YYYY-MM-DD>"
+	now := time.Now()
 	postTitle := strings.TrimSpace(w.TitleTemplate)
 	if postTitle == "" {
 		postTitle = fmt.Sprintf("Digest of %s %s", w.Channel, time.Now().UTC().Format("2006-01-02"))
 	}
+	// Expand template variables in configured title/preface/postscript
+	postTitle = newsletter.ExpandVars(postTitle, now)
 	// Slug is always the filename without ".md"
 	name := w.filename(period)
 	slug := strings.TrimSuffix(name, ".md")
@@ -169,8 +172,8 @@ func (w *NewsletterBuilder) renderMarkdown(period string, items []model.WithScor
 		Title:      postTitle,
 		Slug:       slug,
 		Datetime:   time.Now().UTC().Format("2006-01-02 15:04"),
-		Preface:    w.Preface,
-		Postscript: w.Postscript,
+		Preface:    newsletter.ExpandVars(w.Preface, now),
+		Postscript: newsletter.ExpandVars(w.Postscript, now),
 		Items:      make([]newsletter.Item, 0, min(len(items), w.TopN)),
 	}
 	// Use a base context and rely on per-call timeouts inside the AI client

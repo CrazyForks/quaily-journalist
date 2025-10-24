@@ -61,7 +61,6 @@ type ChannelConfig struct {
 	Frequency        string          `mapstructure:"frequency"` // overrides default
 	TopN             int             `mapstructure:"top_n"`
 	MinItems         int             `mapstructure:"min_items"`
-	OutputDir        string          `mapstructure:"output_dir"`         // overrides default
 	Nodes            []string        `mapstructure:"nodes"`              // source-specific nodes (e.g., V2EX node names)
 	ItemSkipDuration string          `mapstructure:"item_skip_duration"` // e.g., "72h"
 	Template         ChannelTemplate `mapstructure:"template"`

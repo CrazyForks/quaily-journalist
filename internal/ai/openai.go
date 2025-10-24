@@ -69,7 +69,6 @@ func (o *OpenAIClient) SummarizeItem(ctx context.Context, title, content, langua
 		return "", err
 	}
 
-	slog.Info("openai: summarize item", "content", content, "summary", out)
 	return strings.TrimSpace(out), nil
 }
 
