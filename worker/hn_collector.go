@@ -2,7 +2,7 @@ package worker
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"math"
 	"strings"
 	"time"
@@ -55,7 +55,7 @@ func (w *HNCollector) runOnce(ctx context.Context) {
 	for _, list := range lists {
 		items, err := w.fetchList(ctx, list, w.LimitPerList)
 		if err != nil {
-			log.Printf("hn-collector: list=%s error=%v", list, err)
+			slog.Error("hn-collector: fetch list error", "list", list, "error", err)
 			continue
 		}
 		stored := 0
@@ -65,16 +65,16 @@ func (w *HNCollector) runOnce(ctx context.Context) {
 				continue
 			}
 			if err := w.Store.AddNews(ctx, "hackernews", day, it, score); err != nil {
-				log.Printf("hn-collector: store error id=%s err=%v", it.ID, err)
+				slog.Error("hn-collector: store error", "id", it.ID, "error", err)
 				continue
 			}
 			if err := w.Store.AddNews(ctx, "hackernews", week, it, score); err != nil {
-				log.Printf("hn-collector: store error id=%s err=%v", it.ID, err)
+				slog.Error("hn-collector: store error", "id", it.ID, "error", err)
 				continue
 			}
 			stored++
 		}
-		log.Printf("hn-collector: list=%s stored=%d periods=%s,%s", list, stored, day, week)
+		slog.Info("hn-collector: completed for list", "list", list, "stored", stored, "periods", []string{day, week})
 	}
 }
 

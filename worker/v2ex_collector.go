@@ -3,7 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"time"
 
@@ -46,7 +46,7 @@ func (w *V2EXCollector) runOnce(ctx context.Context) {
 	for _, node := range w.Nodes {
 		items, err := w.Client.TopicsByNode(ctx, node)
 		if err != nil {
-			log.Printf("collector: node=%s error=%v", node, err)
+			slog.Error("run v2ex collector failed.", "node", node, "error", err)
 			continue
 		}
 		for _, it := range items {
@@ -55,13 +55,13 @@ func (w *V2EXCollector) runOnce(ctx context.Context) {
 				continue // ignore posts with no replies or low score
 			}
 			if err := w.Store.AddNews(ctx, "v2ex", day, it, score); err != nil {
-				log.Printf("collector: store error id=%s err=%v", it.ID, err)
+				slog.Error("run v2ex collector store error.", "id", it.ID, "error", err)
 			}
 			if err := w.Store.AddNews(ctx, "v2ex", week, it, score); err != nil {
-				log.Printf("collector: store error id=%s err=%v", it.ID, err)
+				slog.Error("run v2ex collector store error.", "id", it.ID, "error", err)
 			}
 		}
-		log.Printf("collector: node=%s stored=%d periods=%s,%s", node, len(items), day, week)
+		slog.Info("v2ex collector: completed for node", "node", node, "stored", len(items), "periods", []string{day, week})
 	}
 }
 

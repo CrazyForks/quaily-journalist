@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -30,68 +31,80 @@ var serveCmd = &cobra.Command{
 		defer rdb.Close()
 		store := storage.NewRedisStore(rdb)
 
+		var collector *worker.V2EXCollector
+		var hnCollector *worker.HNCollector
+
+		var nodes []string
+
+		var v2c *v2ex.Client
+		var hnc *hackernews.Client
+
 		// V2EX collector setup with union of nodes across channels using v2ex
-		v2c := v2ex.NewClient(cfg.Sources.V2EX.BaseURL, cfg.Sources.V2EX.Token)
-		interval, err := time.ParseDuration(cfg.Sources.V2EX.FetchInterval)
-		if err != nil {
-			return err
-		}
-		// gather nodes from channels where source==v2ex
-		nodeSet := map[string]struct{}{}
-		for _, ch := range cfg.Newsletters.Channels {
-			if strings.ToLower(ch.Source) == "v2ex" {
-				for _, n := range ch.Nodes {
-					n = strings.TrimSpace(n)
-					if n == "" {
-						continue
+		if cfg.Sources.V2EX.Token != "" {
+			v2c = v2ex.NewClient(cfg.Sources.V2EX.BaseURL, cfg.Sources.V2EX.Token)
+			interval, err := time.ParseDuration(cfg.Sources.V2EX.FetchInterval)
+			if err != nil {
+				return err
+			}
+			// gather nodes from channels where source==v2ex
+			nodeSet := map[string]struct{}{}
+			for _, ch := range cfg.Newsletters.Channels {
+				if strings.ToLower(ch.Source) == "v2ex" {
+					for _, n := range ch.Nodes {
+						n = strings.TrimSpace(n)
+						if n == "" {
+							continue
+						}
+						nodeSet[n] = struct{}{}
 					}
-					nodeSet[n] = struct{}{}
 				}
 			}
-		}
-		nodes := make([]string, 0, len(nodeSet))
-		for n := range nodeSet {
-			nodes = append(nodes, n)
-		}
-		collector := &worker.V2EXCollector{
-			Client:   v2c,
-			Store:    store,
-			Nodes:    nodes,
-			Interval: interval,
+			nodes := make([]string, 0, len(nodeSet))
+			for n := range nodeSet {
+				nodes = append(nodes, n)
+			}
+			collector = &worker.V2EXCollector{
+				Client:   v2c,
+				Store:    store,
+				Nodes:    nodes,
+				Interval: interval,
+			}
 		}
 
-		// Hacker News collector setup: use HN channel nodes directly as lists
-		hnc := hackernews.NewClient(cfg.Sources.HN.BaseAPI)
-		hnInterval, err := time.ParseDuration(cfg.Sources.HN.FetchInterval)
-		if err != nil {
-			return err
-		}
-		// Gather union of nodes for HN channels; treat them as lists directly
-		hnNodeSet := map[string]struct{}{}
-		for _, ch := range cfg.Newsletters.Channels {
-			if strings.ToLower(ch.Source) == "hackernews" {
-				for _, n := range ch.Nodes {
-					n = strings.ToLower(strings.TrimSpace(n))
-					if n == "" {
-						continue
+		if cfg.Sources.HN.BaseAPI != "" {
+			// Hacker News collector setup: use HN channel nodes directly as lists
+			hnc = hackernews.NewClient(cfg.Sources.HN.BaseAPI)
+			hnInterval, err := time.ParseDuration(cfg.Sources.HN.FetchInterval)
+			if err != nil {
+				return err
+			}
+			// Gather union of nodes for HN channels; treat them as lists directly
+			hnNodeSet := map[string]struct{}{}
+			for _, ch := range cfg.Newsletters.Channels {
+				if strings.ToLower(ch.Source) == "hackernews" {
+					for _, n := range ch.Nodes {
+						n = strings.ToLower(strings.TrimSpace(n))
+						if n == "" {
+							continue
+						}
+						hnNodeSet[n] = struct{}{}
 					}
-					hnNodeSet[n] = struct{}{}
 				}
 			}
-		}
-		hnLists := make([]string, 0, len(hnNodeSet))
-		for n := range hnNodeSet {
-			hnLists = append(hnLists, n)
-		}
-		if len(hnLists) == 0 {
-			hnLists = []string{"top"}
-		}
-		hnCollector := &worker.HNCollector{
-			Client:       hnc,
-			Store:        store,
-			Lists:        hnLists,
-			Interval:     hnInterval,
-			LimitPerList: 64,
+			hnLists := make([]string, 0, len(hnNodeSet))
+			for n := range hnNodeSet {
+				hnLists = append(hnLists, n)
+			}
+			if len(hnLists) == 0 {
+				hnLists = []string{"top"}
+			}
+			hnCollector = &worker.HNCollector{
+				Client:       hnc,
+				Store:        store,
+				Lists:        hnLists,
+				Interval:     hnInterval,
+				LimitPerList: 64,
+			}
 		}
 
 		var summarizer ai.Summarizer
@@ -142,7 +155,15 @@ var serveCmd = &cobra.Command{
 			})
 		}
 
-		ws := []worker.Worker{collector, hnCollector}
+		ws := []worker.Worker{}
+		if collector != nil {
+			slog.Info("starting V2EX collector for nodes", "nodes", collector.Nodes)
+			ws = append(ws, collector)
+		}
+		if hnCollector != nil {
+			slog.Info("starting Hacker News collector for lists", "lists", hnCollector.Lists)
+			ws = append(ws, hnCollector)
+		}
 		ws = append(ws, builders...)
 		mgr := worker.NewManager(ws...)
 		ctx, cancel := context.WithCancel(context.Background())
