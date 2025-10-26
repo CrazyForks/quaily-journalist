@@ -3,11 +3,18 @@ Description=Quaily Journalist Service
 After=network.target
 
 [Service]
+User={USRE_NAME}
+Group={GROUP_NAME}
 Type=simple
-WorkingDirectory=%h/quaily-journalist
-ExecStart=%h/quaily-journalist/bin/quaily-journalist serve --config %h/quaily-journalist/config.yaml
+WorkingDirectory={PATH}
+ExecStart={PATH}/quaily-journalist serve --config {PATH}/config.yaml
 Restart=on-failure
-# Configuration is read from YAML files only; no env overrides are used.
+Restart=on-failure
+StartLimitInterval=10
+StartLimitBurst=10
+RestartSec=1s
+Type=simple
+LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target

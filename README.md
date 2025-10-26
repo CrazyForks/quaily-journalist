@@ -112,10 +112,6 @@ newsletters:
       # - {.CurrentDate} -> YYYY-MM-DD (UTC)
 ```
 
-### Configuration Source
-
-Quaily Journalist reads configuration from YAML files only; environment variables are not used.
-
 ## CLI
 
 - `go run . --help` — show CLI help
@@ -130,15 +126,6 @@ Make targets:
 - `make test` — run unit tests
 - `make vet` — static checks via `go vet`
 
-## Run as a Service (systemd)
-
-An example unit file is provided at `configs/quaily-journalist.service.example`. Update the `WorkingDirectory` and `ExecStart` to match your deployment. Secrets and settings are read from the config file.
-
-```bash
-sudo systemctl enable quaily-journalist
-sudo systemctl start quaily-journalist
-sudo journalctl -u quaily-journalist -f
-```
 
 ## Output
 
@@ -148,6 +135,8 @@ sudo journalctl -u quaily-journalist -f
 
 ## Quaily Publishing
 
+- Create a new channel at [https://quaily.com](https://quaily.com)
+- Get your API token from [Quaily Dashboard](https://quaily.com/dashboard/profile/apikeys#)
 - Add a `quaily` block to `config.yaml` to enable auto‑publish after each render:
 
 ```yaml
@@ -157,137 +146,17 @@ quaily:
   timeout: "10s"
 ```
 
+> the channel will be published to the channel matching the channel name. for example, if the channel is `v2ex-daily`, the post will be published to the Quaily channel with slug `https://quaily.com/v2ex-daily`.
+
 - The `serve` command publishes to Quaily right after writing each Markdown file. It uses the file’s frontmatter as Create Post parameters, adds the Markdown body as `content`, and uses the channel name as `channel_slug`. It then calls Create Post and Publish Post.
 - Use `go run . publish <markdown_path> <channel_slug>` to manually publish a specific file.
 
-## Architecture
+## Run as a Service (systemd)
 
-- Cobra initializes Viper, loads `config.yaml` and env overrides.
-- Commands create a Redis connection via `internal/redisclient`.
-- Workers:
-  - Collector: 
-    - V2EX: polls union of `channels[].nodes` for source `v2ex`, skips zero‑reply topics, computes score, stores into ZSETs per period (daily `YYYY‑MM‑DD` UTC and weekly) with item JSON and TTL.
-    - Hacker News: derives lists from the union of HN channel nodes (e.g., `ask`, `show`, `job`, or `story` → `top/best/new`) and polls those endpoints; computes score from comment count and age; stores into the same period ZSETs under source `hackernews`.
-  - Builder (per channel): filters by nodes and skip markers, enforces `min_items`/`top_n`, renders via `internal/newsletter/newsletter.tmpl`, writes file, and marks published + skipped.
+See Deployment for systemd setup and operations:
 
-## Data Flow and Keys
-
-- Collector (≈10m):
-  - V2EX API → normalize → score → `ZADD news:source:v2ex:period:<YYYY-MM-DD>` and `SET news:item:v2ex:<id>`
-  - Hacker News API → normalize → score → `ZADD news:source:hackernews:period:<YYYY-MM-DD>` and `SET news:item:hackernews:<id>`
-- Builder (≈30m): `ZREVRANGE` → filter nodes/skip → threshold → template render → write file → mark published + skipped
-
-Sample keys (for 2025‑10‑23):
-
-- `news:item:v2ex:123456` — JSON of the topic (7‑day TTL)
-- `news:source:v2ex:period:2025-10-23` — ZSET of IDs with scores
-- `news:item:hackernews:4201337` — JSON of the HN item (7‑day TTL)
-- `news:source:hackernews:period:2025-10-23` — ZSET of IDs with scores
-- `news:published:v2ex_daily_digest:2025-10-23` — flag for published period
-- `news:skip:v2ex_daily_digest:123456` — skip marker (e.g., 72h TTL)
-
-## Directory Layout
-
-```
-cmd/                 # Cobra commands (root + subcommands)
-internal/            # Non-public packages (config, v2ex/hn clients, storage, newsletter)
-worker/              # Long-running workers (collector, builder, manager)
-configs/             # Examples (e.g., systemd unit)
-config.yaml          # Application configuration
-main.go              # CLI entrypoint
-Makefile             # Build/test helpers
-README.md            # This file
-```
+- Deployment and service setup: [Deployment.md](./Deployment.md)
 
 ## Development
 
-- Go 1.21+. Format with `go fmt ./...`
-- Keep commands small and focused under `cmd/`
-- Avoid cyclic dependencies between packages
-- Use tabs for indentation
-
-## Testing
-
-- Standard `testing` package; run `go test -v ./...`
-- Focus on config parsing and Redis interactions (use a test Redis or mocks)
-- Validate template rendering in `internal/newsletter` with sample data
-
-## Security Notes
-
-- Do not commit secrets. Place secrets in a local `config.yaml` located in one of the supported search paths.
-- Prefer config search paths and local untracked variants
-
-## Troubleshooting
-
-- Config not found: pass `--config /path/to/config.yaml` or place it under a search path
-- Redis auth/connection errors: validate your `redis` section and network access
-- No newsletter generated: ensure `min_items` is met; reduce `min_items` or wait for more posts; use `generate` to force a render
-- Empty sections: check `nodes` are correct for V2EX and that the collector interval elapsed
-
----
-
-## Repository Guidelines
-
-The following guidelines apply to contributors and automated agents working in this repository.
-
-### Project Structure & Module Organization
-- `main.go`: CLI entrypoint using Cobra.
-- `cmd/`: Cobra commands (root and subcommands). Example: `cmd/serve.go`, `cmd/redis_ping.go`.
-- `worker/`: Long-running workers (e.g., `v2ex_collector.go`, `newsletter_builder.go`).
-- `internal/config/`: Viper-backed configuration types and defaults.
-- `internal/v2ex/`: Minimal V2EX API client.
-- `internal/storage/`: Redis-backed storage utilities.
-- `internal/redisclient/`: Redis client factory.
-- `internal/newsletter/`: Text/template renderer and embedded template.
-- `config.yaml`: App, sources, newsletters (channels), and Redis settings.
-
-### Build, Test, and Development Commands
-- `go run . --help` — show CLI help.
-- `go run . serve` — run service (workers + scheduler).
-- `go run . generate <channel>` — force-generate today’s post for the channel (overwrites `:output_dir/:channel/:frequency-YYYYMMDD.md`).
-- `go run . redis ping` — ping Redis using config.
-- `make build` — compile to `bin/quaily-journalist`.
-- `make test` — run unit tests (add `_test.go` files).
-- `make vet` — basic static checks via `go vet`.
-
-### Coding Style & Naming Conventions
-- Go 1.21+. Format with `gofmt` (or `go fmt ./...`).
-- Use package-scoped files: `internal/...` for non-public code.
-- Names: packages lower-case (`redisclient`), files `snake_case.go`, tests `*_test.go`.
-- Prefer small, focused commands under `cmd/`. Avoid cyclic deps between packages.
-- Indentation uses tabs, not spaces.
-
-### Testing Guidelines
-- Framework: standard `testing` package.
-- File naming: mirror source with `_test.go`. Example: `internal/config/config_test.go`.
-- Run locally: `go test -v ./...`. Aim for meaningful coverage on config parsing and Redis interactions (use a test Redis or mocks).
-- Template rendering: test `internal/newsletter` rendering with sample data.
-
-### Commit & Pull Request Guidelines
-- Commits: imperative mood and scoped (e.g., `cmd: add redis ping command`).
-- PRs: include summary (What/Why), linked issues, and CLI output when helpful (e.g., ping result). Keep PRs small and focused.
-
-### Security & Configuration Tips
-- Do not commit secrets. Use the config file only (no env overrides).
-- Config search paths: project root, `$HOME/.config/quaily-journalist/`, `./configs/`.
-- Example `config.yaml` provided; create a local variant if needed.
-- Channels live under `newsletters.channels[]` with fields: `name`, `source`, `nodes`, `frequency`, `top_n`, `min_items`, `output_dir`, `item_skip_duration`, `language`, and `template.{title,preface,postscript}`.
-
-### Service (systemd)
-- Example unit: `configs/quaily-journalist.service.example`.
-- Ensure the binary path and working directory match your deployment.
-- Newsletters are written to `newsletters.output_dir/<channel_name>/:frequency-YYYYMMDD.md` (UTF‑8).
-    - name: "hn_daily_digest"
-      source: "hackernews"
-      # HN nodes are the lists to poll: ["top", "new", "best", "ask", "show", "job"]
-      # Optionally include item types (ask/show/job/story) to restrict what the builder includes.
-      nodes: ["top", "best", "new"]
-      frequency: "daily"
-      top_n: 20
-      min_items: 5
-      item_skip_duration: "72h"
-      language: "English"  # Language used for AI outputs
-      template:
-        title: "Hacker News Daily <YYYY-MM-DD>"
-        preface: "Today’s HN highlights."
-        postscript: "Brought to you by Quaily Journalist."
+- Architecture and internals: [Architecture.md](./Architecture.md)
