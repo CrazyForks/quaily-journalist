@@ -17,13 +17,14 @@ type Item struct {
 }
 
 type Data struct {
-	Title      string
-	Slug       string
-	Datetime   string
-	Summary    string
-	Preface    string
-	Postscript string
-	Items      []Item
+	Title        string
+	Slug         string
+	Datetime     string
+	Summary      string
+	ShortSummary string
+	Preface      string
+	Postscript   string
+	Items        []Item
 }
 
 //go:embed newsletter.tmpl

@@ -18,6 +18,8 @@ type Summarizer interface {
 	SummarizeItem(ctx context.Context, title, content, language string) (string, error)
 	// SummarizePost creates a short post-level summary for a set of items in the given language.
 	SummarizePost(ctx context.Context, items []model.NewsItem, language string) (string, error)
+	// SummarizePostLikeAZenMaster creates a very concise, zen-master-style post-level summary for a set of items in the given language.
+	SummarizePostLikeAZenMaster(ctx context.Context, items []model.NewsItem, language string) (string, error)
 }
 
 // OpenAIClient implements Summarizer using OpenAI Chat Completions API.
@@ -72,6 +74,29 @@ func (o *OpenAIClient) SummarizeItem(ctx context.Context, title, content, langua
 	return strings.TrimSpace(out), nil
 }
 
+func (o *OpenAIClient) SummarizePostLikeAZenMaster(ctx context.Context, items []model.NewsItem, language string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 300*time.Second)
+	defer cancel()
+	if len(items) == 0 {
+		return "", nil
+	}
+	b := &strings.Builder{}
+	for i, it := range items {
+		if i >= 10 {
+			break
+		}
+		fmt.Fprintf(b, "- %s (%s)\n", it.Title, it.NodeName)
+	}
+	sys := fmt.Sprintf("You are a zen master who contemplates the flow of information. Write in %s. Produce no more than 1 sentences (10–50 words total) that capture the essence and deeper patterns within today's news. Speak with quiet wisdom about the underlying currents and connections. If details are sparse, divine meaning from the titles alone. Plain text only, like drops of morning dew. Never return an empty vessel.", langOrDefault(language))
+	user := fmt.Sprintf("Today's information streams (title and source):\n%s\nTask: Reflect upon these happenings with zen-like insight. Illuminate the hidden threads that connect these events. Share your contemplation in plain text, flowing like a gentle river across one paragraphs, with no external links to disturb the meditation.", b.String())
+	out, err := o.create(ctx, sys, user)
+	if err != nil {
+		slog.Error("openai: summarize post error", "err", err)
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
 func (o *OpenAIClient) SummarizePost(ctx context.Context, items []model.NewsItem, language string) (string, error) {
 	// set timeout to 300s for post-level summary
 	ctx, cancel := context.WithTimeout(ctx, 300*time.Second)
@@ -86,8 +111,8 @@ func (o *OpenAIClient) SummarizePost(ctx context.Context, items []model.NewsItem
 		}
 		fmt.Fprintf(b, "- %s (%s)\n", it.Title, it.NodeName)
 	}
-	sys := fmt.Sprintf("You are a succinct newsletter editor. Write in %s. Always produce 5 sentences at most (135–270 words total) that summarize the overall themes. If details are limited, infer from titles. Plain text only. Never return an empty output.", langOrDefault(language))
-	user := fmt.Sprintf("Top items (title and node):\n%s\nTask: Write some sentences for summarizing today's highlights. Output the summarization only, plain text, no links.", b.String())
+	sys := fmt.Sprintf("You are a succinct newsletter editor. Write in %s. Always produce 3 ~ 5 sentences at most (90–270 words total) that summarize the overall themes. If details are limited, infer from titles. Plain text only. Never return an empty output.", langOrDefault(language))
+	user := fmt.Sprintf("Top items (title and node):\n%s\nTask: Write some sentences for summarizing today's highlights. Output the summarization only, plain text, two or three or more paragraphs, no links.", b.String())
 	out, err := o.create(ctx, sys, user)
 	if err != nil {
 		slog.Error("openai: summarize post error", "err", err)

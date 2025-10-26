@@ -240,6 +240,9 @@ var generateCmd = &cobra.Command{
 			if s, err := summarizer.SummarizePost(ctxAI, raw, ch.Language); err == nil {
 				nd.Summary = strings.TrimSpace(s)
 			}
+			if s, err := summarizer.SummarizePostLikeAZenMaster(ctxAI, raw, ch.Language); err == nil {
+				nd.ShortSummary = strings.TrimSpace(s)
+			}
 		}
 
 		content, err := newsletter.Render(nd)

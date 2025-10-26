@@ -222,6 +222,9 @@ func (w *NewsletterBuilder) renderMarkdown(period string, items []model.WithScor
 		if s, err := w.Summarizer.SummarizePost(ctxAI, raw, w.Language); err == nil {
 			data.Summary = strings.TrimSpace(s)
 		}
+		if s, err := w.Summarizer.SummarizePostLikeAZenMaster(ctxAI, raw, w.Language); err == nil {
+			data.ShortSummary = strings.TrimSpace(s)
+		}
 	}
 	if strings.TrimSpace(data.Summary) == "" {
 		// Fallback summary built from titles if AI not configured or returned empty
