@@ -6,6 +6,12 @@ Use it to generate a daily or weekly digest you can post, email, or archive.
 
 > This is a golang repository, always use Tab for code indentation.
 
+## Live Channels (Chinese)
+
+- [V2EX 日报](https://quaily.com/v2ex-daily)
+- [V2EX 日报（生活版）](https://quaily.com/v2ex-daily-lifestyle)
+- [V2EX 日报（投资版）](https://quaily.com/v2ex-daily-investment)
+
 ## Features
 
 - V2EX collector by node with configurable poll interval
