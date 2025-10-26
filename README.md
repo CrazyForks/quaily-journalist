@@ -125,6 +125,7 @@ newsletters:
 - `go run . generate <channel>` — force‑generate today’s post for `<channel>` (writes `:output_dir/:channel/:frequency-YYYYMMDD.md` if at least `min_items` are available; ignores published/skip)
 - `go run . redis ping` — ping Redis using current config
 - `go run . publish <markdown_path> <channel_slug>` — publish a rendered Markdown file to Quaily now
+- `go run . send <path_or_slug> <channel_slug>` — deliver a Quaily post now; if `<path_or_slug>` is a file, reads its frontmatter `slug`, otherwise treats it as the slug directly
 
 Make targets:
 
@@ -154,7 +155,7 @@ quaily:
 
 > the channel will be published to the channel matching the channel name. for example, if the channel is `v2ex-daily`, the post will be published to the Quaily channel with slug `https://quaily.com/v2ex-daily`.
 
-- The `serve` command publishes to Quaily right after writing each Markdown file. It uses the file’s frontmatter as Create Post parameters, adds the Markdown body as `content`, and uses the channel name as `channel_slug`. It then calls Create Post and Publish Post.
+ - The `serve` command publishes to Quaily right after writing each Markdown file, then delivers (sends) the post 5 seconds later. It uses the file’s frontmatter as Create Post parameters, adds the Markdown body as `content`, and uses the channel name as `channel_slug`. It then calls Create Post and Publish Post, followed by Deliver.
 - Use `go run . publish <markdown_path> <channel_slug>` to manually publish a specific file.
 
 ## Run as a Service (systemd)

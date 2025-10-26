@@ -145,6 +145,20 @@ func (w *NewsletterBuilder) runOnce(ctx context.Context) {
 			log.Printf("builder: quaily publish failed: %v", err)
 		} else {
 			log.Printf("builder: quaily publish ok for %s", path)
+			// After publish, schedule a send (deliver) 5s later.
+			p := path
+			ch := w.Channel
+			go func() {
+				// small delay to allow publish to settle
+				time.Sleep(5 * time.Second)
+				ctxDel, cancelDel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancelDel()
+				if err := quaily.DeliverMarkdownOrSlug(ctxDel, w.Quaily, p, ch); err != nil {
+					log.Printf("builder: quaily deliver failed for %s: %v", p, err)
+				} else {
+					log.Printf("builder: quaily deliver ok for %s", p)
+				}
+			}()
 		}
 	}
 }
