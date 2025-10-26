@@ -1,10 +1,10 @@
 # Quaily Journalist
 
-Collect, score, and publish Markdown newsletters from V2EX and Hacker News. Quaily Journalist runs small workers that poll sources (V2EX nodes, Hacker News lists derived from channel nodes), rank posts using a Hacker‑News‑like formula, store them in Redis, and periodically render channel‑specific Markdown files (daily/weekly) using a simple template.
+This is a tool by [Quaily](https://quaily.com).
+
+Collect, score, and publish Markdown newsletters from [V2EX](https://v2ex.com) and [Hacker News](https://news.ycombinator.com/news). Quaily Journalist runs small workers that poll sources (V2EX nodes, Hacker News lists derived from channel nodes), rank posts using a Hacker‑News‑like formula, store them in Redis, and periodically render channel‑specific Markdown files (daily/weekly) using a simple template.
 
 Use it to generate a daily or weekly digest you can post, email, or archive.
-
-> This is a golang repository, always use Tab for code indentation.
 
 ## Live Channels (Chinese)
 

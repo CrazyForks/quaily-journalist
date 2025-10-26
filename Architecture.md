@@ -2,6 +2,8 @@
 
 This document describes how Quaily Journalist is put together: the main components, data flow, Redis keys, and how to develop and test locally.
 
+> This is a golang repository, always use Tab for code indentation.
+
 ## Overview
 
 - Cobra CLI initializes Viper to load `config.yaml`.
@@ -83,4 +85,3 @@ Deployment.md        # Deployment guide (systemd, run modes)
 
 - Do not commit secrets. Place secrets in a local `config.yaml` at one of the supported search paths.
 - Prefer config search paths and local untracked variants.
-
