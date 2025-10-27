@@ -104,7 +104,7 @@ openai:
 
 sources:
   v2ex:
-    token: ""      # Optional
+    token: ""      # required, get from https://www.v2ex.com/settings/tokens
     base_url: "https://www.v2ex.com"
     fetch_interval: "10m"
   hackernews:
