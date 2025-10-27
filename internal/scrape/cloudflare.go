@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"sort"
@@ -28,11 +29,34 @@ type markdownRequest struct {
 	RejectRequestPattern []string `json:"rejectRequestPattern,omitempty"`
 }
 
+type scrapeRequest struct {
+	URL      string             `json:"url"`
+	Elements []scrapeRequestEle `json:"elements"`
+}
+
+type scrapeRequestEle struct {
+	Selector string `json:"selector"`
+}
+
 // Common response shapes observed/expected.
-type scrapeResponse struct {
+type markdownResponse struct {
 	Success bool   `json:"success"`
 	Result  string `json:"result"`
 	Errors  any    `json:"errors"`
+}
+
+type scrapeResponse struct {
+	Success bool               `json:"success"`
+	Result  []scrapeResultItem `json:"result"`
+	Errors  any                `json:"errors"`
+}
+type scrapeResultItem struct {
+	Results  []scrapeResultItemEle `json:"results"`
+	Selector string                `json:"selector"`
+}
+type scrapeResultItemEle struct {
+	Html string `json:"html"`
+	Text string `json:"text"`
 }
 
 // NewCloudflare creates a new client from an account ID.
@@ -41,7 +65,7 @@ func NewCloudflare(accountID, token string, timeout time.Duration) *CloudflareCl
 	if timeout <= 0 {
 		timeout = 20 * time.Second
 	}
-	baseURL := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/browser-rendering/markdown", strings.TrimSpace(accountID))
+	baseURL := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/browser-rendering", strings.TrimSpace(accountID))
 	return &CloudflareClient{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		token:   token,
@@ -52,33 +76,18 @@ func NewCloudflare(accountID, token string, timeout time.Duration) *CloudflareCl
 
 // Scrape fetches title and content for a URL using Cloudflare Browser Rendering.
 func (c *CloudflareClient) Scrape(ctx context.Context, u string) (title, content string, err error) {
-	if c == nil {
-		return "", "", errors.New("nil cloudflare client")
-	}
-	if _, err := url.ParseRequestURI(u); err != nil {
-		return "", "", fmt.Errorf("invalid url: %w", err)
-	}
 	body, _ := json.Marshal(markdownRequest{
 		URL:                  u,
 		RejectRequestPattern: []string{"/^.*\\.(css)/"},
 	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL, bytes.NewReader(body))
+	r, err := c.scrape(ctx, "/markdown", u, body)
 	if err != nil {
 		return "", "", err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return "", "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return "", "", fmt.Errorf("cloudflare scrape failed: status=%d body=%s", resp.StatusCode, string(b))
-	}
-	var envelope scrapeResponse
-	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+
+	slog.Info("cloudflare: markdown response", "body", string(r))
+	var envelope markdownResponse
+	if err := json.Unmarshal(r, &envelope); err != nil {
 		return "", "", err
 	}
 
@@ -93,19 +102,68 @@ func (c *CloudflareClient) Scrape(ctx context.Context, u string) (title, content
 			possibleTitles = append(possibleTitles, line)
 		}
 	}
-	if len(possibleTitles) == 0 {
-		// no title found
-		return "", content, nil
+	if len(possibleTitles) != 0 {
+		// sort possible titles by how many `#` they have (less is better)
+		// so that `# Title` is preferred over `## Title`
+		// and `## Title` is preferred over `### Title`
+		// etc.
+		// use Slice sorting
+		sort.Slice(possibleTitles, func(i, j int) bool {
+			return strings.Count(possibleTitles[i], "#") < strings.Count(possibleTitles[j], "#")
+		})
+		title = strings.TrimSpace(strings.TrimLeft(possibleTitles[0], "#"))
 	}
-	// sort possible titles by how many `#` they have (less is better)
-	// so that `# Title` is preferred over `## Title`
-	// and `## Title` is preferred over `### Title`
-	// etc.
-	// use Slice sorting
-	sort.Slice(possibleTitles, func(i, j int) bool {
-		return strings.Count(possibleTitles[i], "#") < strings.Count(possibleTitles[j], "#")
-	})
-	title = strings.TrimSpace(strings.TrimLeft(possibleTitles[0], "#"))
+
+	if title == "" {
+		body, _ = json.Marshal(scrapeRequest{
+			URL: u,
+			Elements: []scrapeRequestEle{
+				{Selector: "title"},
+			},
+		})
+		slog.Info("cloudflare: trying to scrape title element", "body", string(body))
+		r, err = c.scrape(ctx, "/scrape", u, body)
+		if err != nil {
+			return "", content, err
+		}
+		var scrapeEnv scrapeResponse
+		if err := json.Unmarshal(r, &scrapeEnv); err != nil {
+			return "", content, err
+		}
+		if len(scrapeEnv.Result) > 0 && len(scrapeEnv.Result[0].Results) > 0 {
+			scrapedTitle := strings.TrimSpace(scrapeEnv.Result[0].Results[0].Text)
+			if scrapedTitle != "" {
+				title = scrapedTitle
+			}
+		}
+	}
 
 	return title, content, nil
+}
+
+func (c *CloudflareClient) scrape(ctx context.Context, path, u string, body []byte) (raw []byte, err error) {
+	if c == nil {
+		return nil, errors.New("nil cloudflare client")
+	}
+	if _, err := url.ParseRequestURI(u); err != nil {
+		return nil, fmt.Errorf("invalid url: %w", err)
+	}
+	url := c.baseURL + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var b []byte
+	b, _ = io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("cloudflare scrape failed: status=%d body=%s", resp.StatusCode, string(b))
+	}
+	return b, nil
 }
