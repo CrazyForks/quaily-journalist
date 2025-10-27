@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,11 +16,14 @@ import (
 	"quaily-journalist/internal/model"
 	"quaily-journalist/internal/newsletter"
 	"quaily-journalist/internal/redisclient"
+	"quaily-journalist/internal/scrape"
 	"quaily-journalist/internal/storage"
 	"quaily-journalist/internal/v2ex"
 
 	"github.com/spf13/cobra"
 )
+
+var genInputFile string
 
 // generateCmd force-generates a newsletter for a given channel, ignoring skip/published state.
 var generateCmd = &cobra.Command{
@@ -106,49 +111,112 @@ var generateCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		// Prefetch node titles at initialization using the node list from config
-		if strings.ToLower(ch.Source) == "v2ex" {
-			v2c := v2ex.NewClient(cfg.Sources.V2EX.BaseURL, cfg.Sources.V2EX.Token)
-			for _, n := range ch.Nodes {
-				n = strings.TrimSpace(n)
-				if n == "" {
-					continue
-				}
-				if t, _ := store.GetNodeTitle(context.Background(), "v2ex", n); strings.TrimSpace(t) == "" {
-					ctxNode, cancelNode := context.WithTimeout(context.Background(), 5*time.Second)
-					if title, err := v2c.NodeTitle(ctxNode, n); err == nil && strings.TrimSpace(title) != "" {
-						_ = store.SetNodeTitle(context.Background(), "v2ex", n, title, 30*24*time.Hour)
+		externalList := strings.TrimSpace(genInputFile) != ""
+		// Prefetch node titles at initialization using the node list from config (normal flow only)
+		if !externalList {
+			if strings.ToLower(ch.Source) == "v2ex" {
+				v2c := v2ex.NewClient(cfg.Sources.V2EX.BaseURL, cfg.Sources.V2EX.Token)
+				for _, n := range ch.Nodes {
+					n = strings.TrimSpace(n)
+					if n == "" {
+						continue
 					}
-					cancelNode()
+					if t, _ := store.GetNodeTitle(context.Background(), "v2ex", n); strings.TrimSpace(t) == "" {
+						ctxNode, cancelNode := context.WithTimeout(context.Background(), 5*time.Second)
+						if title, err := v2c.NodeTitle(ctxNode, n); err == nil && strings.TrimSpace(title) != "" {
+							_ = store.SetNodeTitle(context.Background(), "v2ex", n, title, 30*24*time.Hour)
+						}
+						cancelNode()
+					}
 				}
 			}
 		}
 
-		items, err := store.TopNews(ctx, ch.Source, period, fetchN)
-		if err != nil {
-			return err
+		var items []model.WithScore
+		if externalList {
+			// URL-list mode: scrape via Cloudflare Browser Rendering, keep order
+			if strings.TrimSpace(cfg.Cloudflare.AccountID) == "" || strings.TrimSpace(cfg.Cloudflare.APIToken) == "" {
+				return fmt.Errorf("cloudflare config missing: set cloudflare.account_id and cloudflare.api_token in config.yaml")
+			}
+			tm := 20 * time.Second
+			if d, err := time.ParseDuration(cfg.Cloudflare.Timeout); err == nil && d > 0 {
+				tm = d
+			}
+			cfc := scrape.NewCloudflare(cfg.Cloudflare.AccountID, cfg.Cloudflare.APIToken, tm)
+			f, err := os.Open(genInputFile)
+			if err != nil {
+				return fmt.Errorf("open input file: %w", err)
+			}
+			defer f.Close()
+			scanner := bufio.NewScanner(f)
+			buf := make([]byte, 0, 1024*64)
+			scanner.Buffer(buf, 1024*1024)
+			lineNo := 0
+			for scanner.Scan() {
+				raw := strings.TrimSpace(scanner.Text())
+				lineNo++
+				if raw == "" || strings.HasPrefix(raw, "#") {
+					continue
+				}
+				ctxReq, cancelReq := context.WithTimeout(context.Background(), tm)
+				title, content, err := cfc.Scrape(ctxReq, raw)
+				slog.Info("generate: scraped URL", "line", lineNo, "url", raw, "title", title)
+				cancelReq()
+				if err != nil {
+					// continue but warn
+					fmt.Fprintf(cmd.ErrOrStderr(), "generate: scrape failed line %d: %v\n", lineNo, err)
+				}
+				if strings.TrimSpace(title) == "" {
+					title = raw
+				}
+				host := "link"
+				if u, err := url.Parse(raw); err == nil && u.Host != "" {
+					host = u.Host
+				}
+				items = append(items, model.WithScore{Item: model.NewsItem{
+					ID:        raw,
+					Title:     title,
+					URL:       raw,
+					NodeName:  host,
+					Replies:   0,
+					Points:    0,
+					CreatedAt: time.Now().UTC(),
+					Content:   content,
+				}, Score: 0})
+			}
+			if err := scanner.Err(); err != nil {
+				return fmt.Errorf("read input file: %w", err)
+			}
+		} else {
+			var err error
+			items, err = store.TopNews(ctx, ch.Source, period, fetchN)
+			if err != nil {
+				return err
+			}
 		}
 		// For Hacker News, nodes list are lists to poll; only filter by nodes
 		// if they include HN item types (ask/show/job/story). Otherwise, skip filtering.
-		if ch.Source == "hackernews" {
-			items = filterHNTypesLocal(items, ch.Nodes)
-		} else {
-			items = filterByNodesLocal(items, ch.Nodes)
-		}
-		// ensure low-signal items are excluded (source-specific)
-		nz := make([]model.WithScore, 0, len(items))
-		for _, ws := range items {
+		if !externalList {
 			if ch.Source == "hackernews" {
-				if ws.Score > 0 {
-					nz = append(nz, ws)
-				}
+				items = filterHNTypesLocal(items, ch.Nodes)
 			} else {
-				if ws.Item.Replies > 0 && ws.Score > 0 {
-					nz = append(nz, ws)
+				items = filterByNodesLocal(items, ch.Nodes)
+			}
+			// ensure low-signal items are excluded (source-specific)
+			nz := make([]model.WithScore, 0, len(items))
+			for _, ws := range items {
+				if ch.Source == "hackernews" {
+					if ws.Score > 0 {
+						nz = append(nz, ws)
+					}
+				} else {
+					if ws.Item.Replies > 0 && ws.Score > 0 {
+						nz = append(nz, ws)
+					}
 				}
 			}
+			items = nz
 		}
-		items = nz
 		if len(items) == 0 {
 			fmt.Fprintln(cmd.OutOrStdout(), "No items found for channel; skipping file creation.")
 			return nil
@@ -197,20 +265,37 @@ var generateCmd = &cobra.Command{
 		}
 		// Use base context; AI client enforces per-call timeouts
 		ctxAI := context.Background()
-		// Resolve node titles for display (best-effort) from Redis cache
+		// Resolve node titles for display (best-effort) from Redis cache (skip in external mode)
 		titleByNode := map[string]string{}
-		set := map[string]struct{}{}
-		for _, ws := range items {
-			set[ws.Item.NodeName] = struct{}{}
-		}
-		for n := range set {
-			if t, err := store.GetNodeTitle(context.Background(), ch.Source, n); err == nil && strings.TrimSpace(t) != "" {
-				titleByNode[n] = t
+		if !externalList {
+			set := map[string]struct{}{}
+			for _, ws := range items {
+				set[ws.Item.NodeName] = struct{}{}
+			}
+			for n := range set {
+				if t, err := store.GetNodeTitle(context.Background(), ch.Source, n); err == nil && strings.TrimSpace(t) != "" {
+					titleByNode[n] = t
+				}
 			}
 		}
 		for _, ws := range items {
 			it := ws.Item
-			nodeURL := nodeURLForLocal(ch.Source, baseURL, it.NodeName)
+			var nodeURL string
+			if externalList {
+				// use scheme://host as category link for external URLs
+				if u, err := url.Parse(it.URL); err == nil && u.Host != "" {
+					if u.Scheme != "" {
+						nodeURL = u.Scheme + "://" + u.Host
+					} else {
+						nodeURL = "https://" + u.Host
+					}
+				}
+				if strings.TrimSpace(nodeURL) == "" {
+					nodeURL = it.URL
+				}
+			} else {
+				nodeURL = nodeURLForLocal(ch.Source, baseURL, it.NodeName)
+			}
 			var desc string
 			if summarizer != nil {
 				if d, err := summarizer.SummarizeItem(ctxAI, it.Title, it.Content, ch.Language); err == nil && d != "" {
@@ -218,8 +303,10 @@ var generateCmd = &cobra.Command{
 				}
 			}
 			displayNode := it.NodeName
-			if t, ok := titleByNode[it.NodeName]; ok && strings.TrimSpace(t) != "" {
-				displayNode = t
+			if !externalList {
+				if t, ok := titleByNode[it.NodeName]; ok && strings.TrimSpace(t) != "" {
+					displayNode = t
+				}
 			}
 			nd.Items = append(nd.Items, newsletter.Item{
 				Title:       it.Title,
@@ -269,6 +356,7 @@ var generateCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(generateCmd)
+	generateCmd.Flags().StringVarP(&genInputFile, "input-file", "i", "", "optional path to a text file of URLs to include (one per line)")
 }
 
 // Local helpers (ignore skip/published)
@@ -344,4 +432,14 @@ func filterHNTypesLocal(items []model.WithScore, nodes []string) []model.WithSco
 		}
 	}
 	return out
+}
+
+// firstNonEmpty returns the first non-empty string among inputs.
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }

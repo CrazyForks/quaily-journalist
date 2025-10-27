@@ -13,12 +13,19 @@ openai:
 
 quaily:
   base_url: "https://api.quaily.com/v1"
-  api_key: ""
+  api_key: ""      # required to publish/send
   timeout: "10s"
+
+cloudflare:
+  # Cloudflare account ID used to build the fixed scrape endpoint URL.
+  # Docs: https://developers.cloudflare.com/browser-rendering/rest-api/
+  account_id: ""
+  api_token: ""     # Cloudflare API token with Browser Rendering permissions
+  timeout: "20s"
 
 sources:
   v2ex:
-    token: "" # Optional
+    token: ""      # Optional V2EX token
     base_url: "https://www.v2ex.com"
     fetch_interval: "10m"
   hackernews:
@@ -40,18 +47,8 @@ newsletters:
         title: "V2EX Daily {.CurrentDate}"
         preface: "Your daily V2EX highlights."
         postscript: "Brought to you by Quaily Journalist."
-    - name: "hn_daily_digest"
-      source: "hackernews"
-      # For HN, nodes are list names to poll directly: ["top", "new", "best", "ask", "show", "job"]
-      # If you also want to restrict by item types in the output, include type names (ask/show/job/story) here;
-      # otherwise all fetched items are eligible for publishing.
-      nodes: ["top", "best"]
-      frequency: "daily"
-      top_n: 20
-      min_items: 5
-      item_skip_duration: "72h"
-      language: "English"
-      template:
-        title: "Hacker News Daily YYYY-MM-DD"
-        preface: "Top HN highlights today."
-        postscript: "Brought to you by Quaily Journalist."
+
+# Notes:
+# - The generate command accepts an optional URL list via: `-i urls.txt`.
+#   Each line should be a URL. When provided, items are fetched via Cloudflare
+#   Browser Rendering API, kept in input order, and rendered without scores.

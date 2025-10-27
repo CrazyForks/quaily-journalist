@@ -78,6 +78,7 @@ type Config struct {
 	OpenAI      OpenAIConfig      `mapstructure:"openai"`
 	Newsletters NewslettersConfig `mapstructure:"newsletters"`
 	Quaily      QuailyConfig      `mapstructure:"quaily"`
+	Cloudflare  CloudflareConfig  `mapstructure:"cloudflare"`
 }
 
 // FillDefaults applies default values if not provided.
@@ -92,4 +93,11 @@ type QuailyConfig struct {
 	BaseURL string `mapstructure:"base_url"`
 	APIKey  string `mapstructure:"api_key"`
 	Timeout string `mapstructure:"timeout"` // e.g., "10s"
+}
+
+// CloudflareConfig holds Cloudflare Browser Rendering API settings.
+type CloudflareConfig struct {
+    AccountID string `mapstructure:"account_id"` // Cloudflare account ID
+    APIToken  string `mapstructure:"api_token"`
+    Timeout   string `mapstructure:"timeout"` // e.g., "20s"
 }

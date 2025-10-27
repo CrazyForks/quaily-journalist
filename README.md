@@ -99,6 +99,13 @@ sources:
     base_api: "https://hacker-news.firebaseio.com/v0"
     fetch_interval: "10m"
 
+cloudflare:
+  # Cloudflare account ID used to build the fixed scrape endpoint URL.
+  # Docs: https://developers.cloudflare.com/browser-rendering/rest-api/
+  account_id: ""   # required
+  api_token: ""    # Cloudflare API token with Browser Rendering permissions
+  timeout: "20s"
+
 newsletters:
   output_dir: "./out"
   channels:
@@ -123,6 +130,7 @@ newsletters:
 - `go run . --help` — show CLI help
 - `go run . serve` — run service (collector + builders + scheduler)
 - `go run . generate <channel>` — force‑generate today’s post for `<channel>` (writes `:output_dir/:channel/:frequency-YYYYMMDD.md` if at least `min_items` are available; ignores published/skip)
+- `go run . generate <channel> -i urls.txt` — generate from a URL list file; fetches each URL via Cloudflare Browser Rendering Markdown endpoint, keeps input order (no scores), and renders normally
 - `go run . redis ping` — ping Redis using current config
 - `go run . publish <markdown_path> <channel_slug>` — publish a rendered Markdown file to Quaily now
 - `go run . send <path_or_slug> <channel_slug>` — deliver a Quaily post now; if `<path_or_slug>` is a file, reads its frontmatter `slug`, otherwise treats it as the slug directly
