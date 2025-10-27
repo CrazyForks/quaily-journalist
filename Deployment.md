@@ -41,7 +41,6 @@ Cloudflare (for URL-list generation)
 - To use `generate -i urls.txt`, configure:
   - `cloudflare.account_id`: your Cloudflare account ID.
   - `cloudflare.api_token`: API token with Browser Rendering permissions.
-  - `cloudflare.timeout`: e.g., `20s`.
 
 ## Run as a Service (using systemd)
 

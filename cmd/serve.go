@@ -117,10 +117,7 @@ var serveCmd = &cobra.Command{
 		// Quaily client (optional)
 		var qcli *quaily.Client
 		if strings.TrimSpace(cfg.Quaily.BaseURL) != "" && strings.TrimSpace(cfg.Quaily.APIKey) != "" {
-			tm := 10 * time.Second
-			if d, err := time.ParseDuration(cfg.Quaily.Timeout); err == nil && d > 0 {
-				tm = d
-			}
+			tm := 20 * time.Second
 			qcli = quaily.New(cfg.Quaily.BaseURL, cfg.Quaily.APIKey, tm)
 		}
 
@@ -139,11 +136,7 @@ var serveCmd = &cobra.Command{
 		// Cloudflare client (optional) for content fallback on HN
 		var cfc *scrape.CloudflareClient
 		if strings.TrimSpace(cfg.Cloudflare.AccountID) != "" && strings.TrimSpace(cfg.Cloudflare.APIToken) != "" {
-			tm := 20 * time.Second
-			if d, err := time.ParseDuration(cfg.Cloudflare.Timeout); err == nil && d > 0 {
-				tm = d
-			}
-			cfc = scrape.NewCloudflare(cfg.Cloudflare.AccountID, cfg.Cloudflare.APIToken, tm)
+			cfc = scrape.NewCloudflare(cfg.Cloudflare.AccountID, cfg.Cloudflare.APIToken, 20*time.Second)
 		}
 
 		// Newsletter builders (one per channel)

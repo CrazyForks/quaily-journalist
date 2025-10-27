@@ -25,10 +25,7 @@ var publishCmd = &cobra.Command{
 		if cfg.Quaily.BaseURL == "" || cfg.Quaily.APIKey == "" {
 			return fmt.Errorf("quaily config missing: set quaily.base_url and quaily.api_key in config.yaml")
 		}
-		tm := 10 * time.Second
-		if d, err := time.ParseDuration(cfg.Quaily.Timeout); err == nil && d > 0 {
-			tm = d
-		}
+		tm := 20 * time.Second
 		cli := quaily.New(cfg.Quaily.BaseURL, cfg.Quaily.APIKey, tm)
 		ctx, cancel := context.WithTimeout(context.Background(), tm)
 		defer cancel()

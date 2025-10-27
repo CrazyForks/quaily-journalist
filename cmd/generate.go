@@ -138,11 +138,7 @@ var generateCmd = &cobra.Command{
 			if strings.TrimSpace(cfg.Cloudflare.AccountID) == "" || strings.TrimSpace(cfg.Cloudflare.APIToken) == "" {
 				return fmt.Errorf("cloudflare config missing: set cloudflare.account_id and cloudflare.api_token in config.yaml")
 			}
-			tm := 20 * time.Second
-			if d, err := time.ParseDuration(cfg.Cloudflare.Timeout); err == nil && d > 0 {
-				tm = d
-			}
-			cfc := scrape.NewCloudflare(cfg.Cloudflare.AccountID, cfg.Cloudflare.APIToken, tm)
+			cfc := scrape.NewCloudflare(cfg.Cloudflare.AccountID, cfg.Cloudflare.APIToken, 20*time.Second)
 			f, err := os.Open(genInputFile)
 			if err != nil {
 				return fmt.Errorf("open input file: %w", err)
@@ -158,7 +154,7 @@ var generateCmd = &cobra.Command{
 				if raw == "" || strings.HasPrefix(raw, "#") {
 					continue
 				}
-				ctxReq, cancelReq := context.WithTimeout(context.Background(), tm)
+			ctxReq, cancelReq := context.WithTimeout(context.Background(), 20*time.Second)
 				title, content, err := cfc.Scrape(ctxReq, raw)
 				slog.Info("generate: scraped URL", "line", lineNo, "url", raw, "title", title)
 				cancelReq()
@@ -263,14 +259,10 @@ var generateCmd = &cobra.Command{
 		if cfg.OpenAI.APIKey != "" {
 			summarizer = ai.NewOpenAI(ai.Config{APIKey: cfg.OpenAI.APIKey, Model: cfg.OpenAI.Model, BaseURL: cfg.OpenAI.BaseURL})
 		}
-		// Optional Cloudflare client for HN content fallback during summarization
+		// Optional Cloudflare client for content fallback during summarization
 		var cfc *scrape.CloudflareClient
 		if strings.TrimSpace(cfg.Cloudflare.AccountID) != "" && strings.TrimSpace(cfg.Cloudflare.APIToken) != "" {
-			tm := 20 * time.Second
-			if d, err := time.ParseDuration(cfg.Cloudflare.Timeout); err == nil && d > 0 {
-				tm = d
-			}
-			cfc = scrape.NewCloudflare(cfg.Cloudflare.AccountID, cfg.Cloudflare.APIToken, tm)
+			cfc = scrape.NewCloudflare(cfg.Cloudflare.AccountID, cfg.Cloudflare.APIToken, 20*time.Second)
 		}
 		// Use base context; AI client enforces per-call timeouts
 		ctxAI := context.Background()

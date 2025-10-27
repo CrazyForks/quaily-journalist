@@ -92,12 +92,10 @@ func (c *Config) FillDefaults() {
 type QuailyConfig struct {
 	BaseURL string `mapstructure:"base_url"`
 	APIKey  string `mapstructure:"api_key"`
-	Timeout string `mapstructure:"timeout"` // e.g., "10s"
 }
 
 // CloudflareConfig holds Cloudflare Browser Rendering API settings.
 type CloudflareConfig struct {
-    AccountID string `mapstructure:"account_id"` // Cloudflare account ID
-    APIToken  string `mapstructure:"api_token"`
-    Timeout   string `mapstructure:"timeout"` // e.g., "20s"
+	AccountID string `mapstructure:"account_id"` // Cloudflare account ID
+	APIToken  string `mapstructure:"api_token"`
 }

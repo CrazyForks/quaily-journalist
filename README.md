@@ -12,6 +12,10 @@ Use it to generate a daily or weekly digest you can post, email, or archive.
 - [V2EX 日报（生活版）](https://quaily.com/v2ex-daily-lifestyle)
 - [V2EX 日报（投资版）](https://quaily.com/v2ex-daily-investment)
 
+and their [Telegram channels](https://t.me/v2ex_daily)
+
+- [Hackernews 日报](https://quaily.com/hackernews-daily) and the [Telegram channel](https://t.me/hackernews_daily_zh)
+
 ## Features
 
 - V2EX collector by node with configurable poll interval
@@ -22,7 +26,7 @@ Use it to generate a daily or weekly digest you can post, email, or archive.
 - Markdown rendering via a text/template (easy to customize)
 - AI-powered summaries (OpenAI) for item descriptions and a post summary
 - CLI with `serve`, `generate`, and `redis ping`
-- Configurable via YAML config only (no env overrides)
+- Configurable via YAML config
 - Systemd‑friendly service unit example
 
 ## Quick Start
@@ -49,11 +53,12 @@ This writes newsletters under `out/<channel>/` when the builder has enough items
 go run . generate <channel>
 ```
 
-Optional: generate from a URL list file using Cloudflare Browser Rendering (Markdown endpoint). Provide one URL per line in a text file:
+Optional: generate from a URL list file using Cloudflare Browser Rendering. Provide one URL per line in a text file:
 
 ```bash
 go run . generate <channel> -i urls.txt
 ```
+
 This fetches each URL via Cloudflare Browser Rendering, keeps input order (no scores), and renders normally. Requires `cloudflare.account_id` and `cloudflare.api_token` in config.
 
 ## Installation
@@ -81,7 +86,7 @@ Quaily Journalist reads `config.yaml` from one of:
 
 You can also pass `--config /path/to/config.yaml`.
 
-Example (redacted) configuration (config file only; no env overrides):
+Example (redacted) configuration:
 
 ```yaml
 app:
@@ -111,7 +116,6 @@ cloudflare:
   # Docs: https://developers.cloudflare.com/browser-rendering/rest-api/
   account_id: ""   # required
   api_token: ""    # Cloudflare API token with Browser Rendering permissions
-  timeout: "20s"
 
 newsletters:
   output_dir: "./out"
@@ -165,7 +169,6 @@ Make targets:
 quaily:
   base_url: "https://api.quaily.com/v1"
   api_key: "YOUR_TOKEN"
-  timeout: "10s"
 ```
 
 > the channel will be published to the channel matching the channel name. for example, if the channel is `v2ex-daily`, the post will be published to the Quaily channel with slug `https://quaily.com/v2ex-daily`.
