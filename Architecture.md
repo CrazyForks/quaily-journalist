@@ -34,12 +34,17 @@ This document describes how Quaily Journalist is put together: the main componen
   - Enforces `min_items` and `top_n`.
   - Renders Markdown with `internal/newsletter` template and writes to `out/<channel>/` (`daily-YYYYMMDD.md`, etc.).
   - Marks published + skipped in Redis so repeated runs don’t duplicate work.
+  - When Quaily is configured, publishes to Quaily and then delivers (sends) the post 5 seconds later.
 
 - Manager (`worker/manager.go`)
   - Starts collectors and builders with their configured intervals; coordinates shutdown.
 
 - AI summaries (`internal/ai/openai.go`)
   - If `openai` is configured in `config.yaml`, item descriptions and a post summary are produced and injected into the template variables.
+
+- Cloudflare scraping (Markdown endpoint) for URL-list generate mode (`internal/scrape`)
+  - `cmd/generate -i urls.txt` reads a file of URLs and fetches each via Cloudflare Browser Rendering Markdown endpoint: `POST /client/v4/accounts/<ACCOUNT_ID>/browser-rendering/markdown` with body `{ "url": "..." }`.
+  - The fetched items are assembled in input order (no scores) and rendered like normal posts.
 
 ## Data Flow and Keys
 

@@ -80,6 +80,7 @@ func (c *CloudflareClient) Scrape(ctx context.Context, u string) (title, content
 		URL:                  u,
 		RejectRequestPattern: []string{"/^.*\\.(css)/"},
 	})
+	slog.Info("cloudflare: markdown request", "url", u)
 	r, err := c.scrape(ctx, "/markdown", u, body)
 	if err != nil {
 		return "", "", err
@@ -121,7 +122,6 @@ func (c *CloudflareClient) Scrape(ctx context.Context, u string) (title, content
 				{Selector: "title"},
 			},
 		})
-		slog.Info("cloudflare: trying to scrape title element", "body", string(body))
 		r, err = c.scrape(ctx, "/scrape", u, body)
 		if err != nil {
 			return "", content, err

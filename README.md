@@ -49,6 +49,13 @@ This writes newsletters under `out/<channel>/` when the builder has enough items
 go run . generate <channel>
 ```
 
+Optional: generate from a URL list file using Cloudflare Browser Rendering (Markdown endpoint). Provide one URL per line in a text file:
+
+```bash
+go run . generate <channel> -i urls.txt
+```
+This fetches each URL via Cloudflare Browser Rendering, keeps input order (no scores), and renders normally. Requires `cloudflare.account_id` and `cloudflare.api_token` in config.
+
 ## Installation
 
 Build a local binary:
@@ -130,7 +137,7 @@ newsletters:
 - `go run . --help` — show CLI help
 - `go run . serve` — run service (collector + builders + scheduler)
 - `go run . generate <channel>` — force‑generate today’s post for `<channel>` (writes `:output_dir/:channel/:frequency-YYYYMMDD.md` if at least `min_items` are available; ignores published/skip)
-- `go run . generate <channel> -i urls.txt` — generate from a URL list file; fetches each URL via Cloudflare Browser Rendering Markdown endpoint, keeps input order (no scores), and renders normally
+- `go run . generate <channel> -i urls.txt` — generate from a URL list file; fetches each URL via Cloudflare Browser Rendering Markdown endpoint, keeps input order (no scores)
 - `go run . redis ping` — ping Redis using current config
 - `go run . publish <markdown_path> <channel_slug>` — publish a rendered Markdown file to Quaily now
 - `go run . send <path_or_slug> <channel_slug>` — deliver a Quaily post now; if `<path_or_slug>` is a file, reads its frontmatter `slug`, otherwise treats it as the slug directly
