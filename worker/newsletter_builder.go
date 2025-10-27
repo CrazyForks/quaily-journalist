@@ -13,6 +13,7 @@ import (
 	"quaily-journalist/internal/ai"
 	"quaily-journalist/internal/model"
 	"quaily-journalist/internal/newsletter"
+	"quaily-journalist/internal/scrape"
 	"quaily-journalist/internal/quaily"
 	"quaily-journalist/internal/storage"
 )
@@ -35,6 +36,7 @@ type NewsletterBuilder struct {
 	Summarizer    ai.Summarizer
 	TitleTemplate string
 	Quaily        *quaily.Client
+	Cloudflare    *scrape.CloudflareClient
 }
 
 func (w *NewsletterBuilder) Start(ctx context.Context) error {
@@ -207,8 +209,20 @@ func (w *NewsletterBuilder) renderMarkdown(period string, items []model.WithScor
 	for i := 0; i < maxN; i++ {
 		it := items[i].Item
 		var desc string
+		contentForSum := it.Content
+		// If content is empty and Cloudflare is configured, scrape the URL to populate content before summarizing.
+		if strings.TrimSpace(contentForSum) == "" && w.Cloudflare != nil {
+			ctxReq, cancelReq := context.WithTimeout(ctxAI, 20*time.Second)
+			_, scraped, err := w.Cloudflare.Scrape(ctxReq, it.URL)
+			cancelReq()
+			if err != nil {
+				log.Printf("builder: scrape fallback failed url=%s err=%v", it.URL, err)
+			} else if strings.TrimSpace(scraped) != "" {
+				contentForSum = scraped
+			}
+		}
 		if w.Summarizer != nil {
-			if d, err := w.Summarizer.SummarizeItem(ctxAI, it.Title, it.Content, w.Language); err == nil && d != "" {
+			if d, err := w.Summarizer.SummarizeItem(ctxAI, it.Title, contentForSum, w.Language); err == nil && d != "" {
 				desc = d
 			}
 		}

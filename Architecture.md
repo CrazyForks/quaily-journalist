@@ -41,6 +41,7 @@ This document describes how Quaily Journalist is put together: the main componen
 
 - AI summaries (`internal/ai/openai.go`)
   - If `openai` is configured in `config.yaml`, item descriptions and a post summary are produced and injected into the template variables.
+  - For items with empty content (e.g., from Hacker News), the builder and generate command attempt a Cloudflare Browser Rendering Markdown scrape of the item URL to obtain text before summarizing.
 
 - Cloudflare scraping (Markdown endpoint) for URL-list generate mode (`internal/scrape`)
   - `cmd/generate -i urls.txt` reads a file of URLs and fetches each via Cloudflare Browser Rendering Markdown endpoint: `POST /client/v4/accounts/<ACCOUNT_ID>/browser-rendering/markdown` with body `{ "url": "..." }`.

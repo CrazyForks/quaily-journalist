@@ -263,6 +263,15 @@ var generateCmd = &cobra.Command{
 		if cfg.OpenAI.APIKey != "" {
 			summarizer = ai.NewOpenAI(ai.Config{APIKey: cfg.OpenAI.APIKey, Model: cfg.OpenAI.Model, BaseURL: cfg.OpenAI.BaseURL})
 		}
+		// Optional Cloudflare client for HN content fallback during summarization
+		var cfc *scrape.CloudflareClient
+		if strings.TrimSpace(cfg.Cloudflare.AccountID) != "" && strings.TrimSpace(cfg.Cloudflare.APIToken) != "" {
+			tm := 20 * time.Second
+			if d, err := time.ParseDuration(cfg.Cloudflare.Timeout); err == nil && d > 0 {
+				tm = d
+			}
+			cfc = scrape.NewCloudflare(cfg.Cloudflare.AccountID, cfg.Cloudflare.APIToken, tm)
+		}
 		// Use base context; AI client enforces per-call timeouts
 		ctxAI := context.Background()
 		// Resolve node titles for display (best-effort) from Redis cache (skip in external mode)
@@ -297,8 +306,18 @@ var generateCmd = &cobra.Command{
 				nodeURL = nodeURLForLocal(ch.Source, baseURL, it.NodeName)
 			}
 			var desc string
+			contentForSum := it.Content
+			// If content is empty and Cloudflare client is available, scrape the URL to populate content
+			if strings.TrimSpace(contentForSum) == "" && cfc != nil {
+				ctxReq, cancelReq := context.WithTimeout(context.Background(), 20*time.Second)
+				_, scraped, err := cfc.Scrape(ctxReq, it.URL)
+				cancelReq()
+				if err == nil && strings.TrimSpace(scraped) != "" {
+					contentForSum = scraped
+				}
+			}
 			if summarizer != nil {
-				if d, err := summarizer.SummarizeItem(ctxAI, it.Title, it.Content, ch.Language); err == nil && d != "" {
+				if d, err := summarizer.SummarizeItem(ctxAI, it.Title, contentForSum, ch.Language); err == nil && d != "" {
 					desc = d
 				}
 			}

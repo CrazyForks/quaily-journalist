@@ -17,6 +17,7 @@ import (
 	"quaily-journalist/internal/redisclient"
 	"quaily-journalist/internal/storage"
 	"quaily-journalist/internal/v2ex"
+	"quaily-journalist/internal/scrape"
 	"quaily-journalist/worker"
 
 	"github.com/spf13/cobra"
@@ -135,6 +136,16 @@ var serveCmd = &cobra.Command{
 			cancelNode()
 		}
 
+		// Cloudflare client (optional) for content fallback on HN
+		var cfc *scrape.CloudflareClient
+		if strings.TrimSpace(cfg.Cloudflare.AccountID) != "" && strings.TrimSpace(cfg.Cloudflare.APIToken) != "" {
+			tm := 20 * time.Second
+			if d, err := time.ParseDuration(cfg.Cloudflare.Timeout); err == nil && d > 0 {
+				tm = d
+			}
+			cfc = scrape.NewCloudflare(cfg.Cloudflare.AccountID, cfg.Cloudflare.APIToken, tm)
+		}
+
 		// Newsletter builders (one per channel)
 		var builders []worker.Worker
 		for _, ch := range cfg.Newsletters.Channels {
@@ -164,6 +175,7 @@ var serveCmd = &cobra.Command{
 				Summarizer:    summarizer,
 				TitleTemplate: ch.Template.Title,
 				Quaily:        qcli,
+				Cloudflare:    cfc,
 			})
 		}
 

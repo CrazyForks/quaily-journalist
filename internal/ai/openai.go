@@ -63,7 +63,12 @@ func (o *OpenAIClient) SummarizeItem(ctx context.Context, title, content, langua
 		content = string([]rune(content)[:1000])
 	}
 
-	sys := fmt.Sprintf("You are a concise newsletter editor. Write in %s. Return 1–3 sentences (30–180 words) summarizing the topic. Plain text, no links.", langOrDefault(language))
+	sys := fmt.Sprintf(`
+		Try your best to rewrite the text into a summary, write in %s, return 1–3 sentences (30–180 words), summarizing the topic.
+		The summary should retains the deep meaning or deep wisdom of the text.
+		You must summarize in the author's writing style.
+		You must be creative, be fun
+		`, langOrDefault(language))
 	user := fmt.Sprintf("Title: %s\nContent: %s", title, content)
 	out, err := o.create(ctx, sys, user)
 	if err != nil {
@@ -87,7 +92,15 @@ func (o *OpenAIClient) SummarizePostLikeAZenMaster(ctx context.Context, items []
 		}
 		fmt.Fprintf(b, "- %s (%s)\n", it.Title, it.NodeName)
 	}
-	sys := fmt.Sprintf("You are a zen master who contemplates the flow of information. Write in %s. Produce no more than 1 sentences (10–50 words total) that capture the essence and deeper patterns within today's news. Speak with quiet wisdom about the underlying currents and connections. If details are sparse, divine meaning from the titles alone. Plain text only, like drops of morning dew. Never return an empty vessel.", langOrDefault(language))
+	sys := fmt.Sprintf(`
+		Try your best to rewrite the text into a summary, write in %s, return 1 ~ 2 sentences (20–90 words), summarizing the topic.
+		The summary should retains the deep meaning or deep wisdom of the text.
+		You must summarize in the author's writing style.
+		You must be creative, be fun
+		The summary should as short as possible.
+		You must try your best to get the deep principal idea of the text. may be in ZEN way.
+		`, langOrDefault(language))
+
 	user := fmt.Sprintf("Today's information streams (title and source):\n%s\nTask: Reflect upon these happenings with zen-like insight. Illuminate the hidden threads that connect these events. Share your contemplation in plain text, flowing like a gentle river across one paragraphs, with no external links to disturb the meditation.", b.String())
 	out, err := o.create(ctx, sys, user)
 	if err != nil {
@@ -111,7 +124,12 @@ func (o *OpenAIClient) SummarizePost(ctx context.Context, items []model.NewsItem
 		}
 		fmt.Fprintf(b, "- %s (%s)\n", it.Title, it.NodeName)
 	}
-	sys := fmt.Sprintf("You are a succinct newsletter editor. Write in %s. Always produce 3 ~ 5 sentences at most (90–270 words total) that summarize the overall themes. If details are limited, infer from titles. Plain text only. Never return an empty output.", langOrDefault(language))
+	sys := fmt.Sprintf(`
+		Try your best to rewrite the text into a summary, write in %s, return 3 ~ 5 sentences (90–270 words), summarizing the topic.
+		The summary should retains the deep meaning or deep wisdom of the text.
+		You must summarize in the author's writing style.
+		You must be creative, be fun
+		`, langOrDefault(language))
 	user := fmt.Sprintf("Top items (title and node):\n%s\nTask: Write some sentences for summarizing today's highlights. Output the summarization only, plain text, two or three or more paragraphs, no links.", b.String())
 	out, err := o.create(ctx, sys, user)
 	if err != nil {

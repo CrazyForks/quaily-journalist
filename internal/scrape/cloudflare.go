@@ -86,7 +86,6 @@ func (c *CloudflareClient) Scrape(ctx context.Context, u string) (title, content
 		return "", "", err
 	}
 
-	slog.Info("cloudflare: markdown response", "body", string(r))
 	var envelope markdownResponse
 	if err := json.Unmarshal(r, &envelope); err != nil {
 		return "", "", err
