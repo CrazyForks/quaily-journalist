@@ -8,7 +8,7 @@ redis:
 
 openai:
   api_key: ""
-  model: "gpt-4o-mini"
+  model: "gpt-5"
   base_url: "" # optional, e.g., https://api.openai.com/v1
 
 quaily:
