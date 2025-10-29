@@ -13,8 +13,8 @@ import (
 	"quaily-journalist/internal/ai"
 	"quaily-journalist/internal/model"
 	"quaily-journalist/internal/newsletter"
-	"quaily-journalist/internal/scrape"
 	"quaily-journalist/internal/quaily"
+	"quaily-journalist/internal/scrape"
 	"quaily-journalist/internal/storage"
 )
 

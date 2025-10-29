@@ -32,4 +32,3 @@ func DeliverMarkdownOrSlug(ctx context.Context, c *Client, pathOrSlug, channelSl
 	// Not a file; assume it's a post slug directly
 	return c.DeliverPost(ctx, channelSlug, pathOrSlug)
 }
-

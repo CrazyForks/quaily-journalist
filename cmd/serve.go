@@ -15,9 +15,9 @@ import (
 	"quaily-journalist/internal/hackernews"
 	"quaily-journalist/internal/quaily"
 	"quaily-journalist/internal/redisclient"
+	"quaily-journalist/internal/scrape"
 	"quaily-journalist/internal/storage"
 	"quaily-journalist/internal/v2ex"
-	"quaily-journalist/internal/scrape"
 	"quaily-journalist/worker"
 
 	"github.com/spf13/cobra"

@@ -154,7 +154,7 @@ var generateCmd = &cobra.Command{
 				if raw == "" || strings.HasPrefix(raw, "#") {
 					continue
 				}
-			ctxReq, cancelReq := context.WithTimeout(context.Background(), 20*time.Second)
+				ctxReq, cancelReq := context.WithTimeout(context.Background(), 20*time.Second)
 				title, content, err := cfc.Scrape(ctxReq, raw)
 				slog.Info("generate: scraped URL", "line", lineNo, "url", raw, "title", title)
 				cancelReq()

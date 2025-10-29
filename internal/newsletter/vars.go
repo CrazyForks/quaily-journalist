@@ -18,4 +18,3 @@ func ExpandVars(s string, now time.Time) string {
 	out := strings.ReplaceAll(s, "{.CurrentDate}", date)
 	return out
 }
-
