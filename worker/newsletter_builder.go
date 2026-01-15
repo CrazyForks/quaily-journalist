@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"quaily-journalist/internal/ai"
+	"quaily-journalist/internal/imagegen"
 	"quaily-journalist/internal/model"
 	"quaily-journalist/internal/newsletter"
 	"quaily-journalist/internal/quaily"
@@ -37,6 +39,9 @@ type NewsletterBuilder struct {
 	TitleTemplate string
 	Quaily        *quaily.Client
 	Cloudflare    *scrape.CloudflareClient
+	CoverGen      imagegen.Generator
+	CoverPrompt   string
+	CoverAspect   string
 }
 
 func (w *NewsletterBuilder) Start(ctx context.Context) error {
@@ -263,6 +268,46 @@ func (w *NewsletterBuilder) renderMarkdown(period string, items []model.WithScor
 		if len(titles) > 0 {
 			data.Summary = fmt.Sprintf("Top highlights: %s.", strings.Join(titles, ", "))
 		}
+	}
+	coverRel := path.Join(slug, "cover.webp")
+	coverPath := filepath.Join(w.OutputDir, w.Channel, slug, "cover.webp")
+	coverURL := ""
+	if _, err := os.Stat(coverPath); err == nil {
+		coverURL = coverRel
+	} else if w.CoverGen != nil {
+		highlights := make([]string, 0, min(5, len(data.Items)))
+		for i := 0; i < min(5, len(data.Items)); i++ {
+			highlights = append(highlights, data.Items[i].Title)
+		}
+		promptSummary := strings.TrimSpace(data.ShortSummary)
+		if promptSummary == "" {
+			promptSummary = strings.TrimSpace(data.Summary)
+		}
+		prompt := imagegen.BuildCoverPrompt(imagegen.PromptData{
+			Title:       data.Title,
+			Summary:     promptSummary,
+			Highlights:  highlights,
+			Language:    w.Language,
+			AspectRatio: w.CoverAspect,
+		}, w.CoverPrompt)
+		if err := w.CoverGen.GenerateCover(ctxAI, prompt, coverPath); err != nil {
+			log.Printf("builder: cover image generation failed: %v", err)
+		} else {
+			coverURL = coverRel
+		}
+	}
+	if w.Quaily != nil && coverURL != "" {
+		ctxUp, cancelUp := context.WithTimeout(ctxAI, 30*time.Second)
+		viewURL, err := w.Quaily.UploadAttachment(ctxUp, coverPath, false)
+		cancelUp()
+		if err != nil {
+			log.Printf("builder: cover upload failed: %v", err)
+		} else if strings.TrimSpace(viewURL) != "" {
+			coverURL = viewURL
+		}
+	}
+	if coverURL != "" {
+		data.CoverImageURL = coverURL
 	}
 	out, err := newsletter.Render(data)
 	if err != nil {

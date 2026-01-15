@@ -7,14 +7,17 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"quaily-journalist/internal/ai"
+	"quaily-journalist/internal/imagegen"
 	"quaily-journalist/internal/model"
 	"quaily-journalist/internal/newsletter"
+	"quaily-journalist/internal/quaily"
 	"quaily-journalist/internal/redisclient"
 	"quaily-journalist/internal/scrape"
 	"quaily-journalist/internal/storage"
@@ -117,16 +120,32 @@ var generateCmd = &cobra.Command{
 			if strings.ToLower(ch.Source) == "v2ex" {
 				v2c := v2ex.NewClient(cfg.Sources.V2EX.BaseURL, cfg.Sources.V2EX.Token)
 				for _, n := range ch.Nodes {
+					slog.Info("generate: fetching v2ex node title", "node", n)
 					n = strings.TrimSpace(n)
 					if n == "" {
+						slog.Info("generate: v2ex node title fetch skipped for empty node")
 						continue
 					}
-					if t, _ := store.GetNodeTitle(context.Background(), "v2ex", n); strings.TrimSpace(t) == "" {
+					t, err := store.GetNodeTitle(context.Background(), "v2ex", n)
+					if err != nil {
+						slog.Warn("generate: v2ex node title fetch from cache failed", "node", n, "err", err)
+						continue
+					}
+					if strings.TrimSpace(t) == "" {
 						ctxNode, cancelNode := context.WithTimeout(context.Background(), 5*time.Second)
-						if title, err := v2c.NodeTitle(ctxNode, n); err == nil && strings.TrimSpace(title) != "" {
+						title, err := v2c.NodeTitle(ctxNode, n)
+						if err != nil {
+							slog.Warn("generate: v2ex node title fetch failed", "node", n, "err", err)
+							cancelNode()
+							continue
+						}
+						slog.Info("generate: v2ex node title fetched", "node", n, "title", title)
+						if err == nil && strings.TrimSpace(title) != "" {
 							_ = store.SetNodeTitle(context.Background(), "v2ex", n, title, 30*24*time.Hour)
 						}
 						cancelNode()
+					} else {
+						slog.Info("generate: v2ex node title found in cache", "node", n, "title", t)
 					}
 				}
 			}
@@ -264,6 +283,33 @@ var generateCmd = &cobra.Command{
 		if strings.TrimSpace(cfg.Cloudflare.AccountID) != "" && strings.TrimSpace(cfg.Cloudflare.APIToken) != "" {
 			cfc = scrape.NewCloudflare(cfg.Cloudflare.AccountID, cfg.Cloudflare.APIToken, 20*time.Second)
 		}
+		var coverGen imagegen.Generator
+		if strings.TrimSpace(cfg.Susanoo.BaseURL) != "" && strings.TrimSpace(cfg.Susanoo.APIKey) != "" {
+			timeout := 30 * time.Second
+			if strings.TrimSpace(cfg.Susanoo.Timeout) != "" {
+				if d, err := time.ParseDuration(cfg.Susanoo.Timeout); err != nil {
+					return fmt.Errorf("invalid susanoo.timeout: %w", err)
+				} else {
+					timeout = d
+				}
+			}
+			gen, err := imagegen.NewSusanoo(imagegen.SusanooConfig{
+				BaseURL:     cfg.Susanoo.BaseURL,
+				APIKey:      cfg.Susanoo.APIKey,
+				Model:       cfg.Susanoo.Model,
+				AspectRatio: cfg.Susanoo.AspectRatio,
+				Timeout:     timeout,
+				WebPQuality: cfg.Susanoo.WebPQuality,
+			})
+			if err != nil {
+				return err
+			}
+			coverGen = gen
+		}
+		var qcli *quaily.Client
+		if strings.TrimSpace(cfg.Quaily.BaseURL) != "" && strings.TrimSpace(cfg.Quaily.APIKey) != "" {
+			qcli = quaily.New(cfg.Quaily.BaseURL, cfg.Quaily.APIKey, 20*time.Second)
+		}
 		// Use base context; AI client enforces per-call timeouts
 		ctxAI := context.Background()
 		// Resolve node titles for display (best-effort) from Redis cache (skip in external mode)
@@ -342,6 +388,46 @@ var generateCmd = &cobra.Command{
 				nd.ShortSummary = strings.TrimSpace(s)
 			}
 		}
+		coverRel := path.Join(slug, "cover.webp")
+		coverPath := filepath.Join(ch.OutputDir, ch.Name, slug, "cover.webp")
+		coverURL := ""
+		if _, err := os.Stat(coverPath); err == nil {
+			coverURL = coverRel
+		} else if coverGen != nil {
+			highlights := make([]string, 0, min(5, len(nd.Items)))
+			for i := 0; i < min(5, len(nd.Items)); i++ {
+				highlights = append(highlights, nd.Items[i].Title)
+			}
+			promptSummary := strings.TrimSpace(nd.ShortSummary)
+			if promptSummary == "" {
+				promptSummary = strings.TrimSpace(nd.Summary)
+			}
+			prompt := imagegen.BuildCoverPrompt(imagegen.PromptData{
+				Title:       nd.Title,
+				Summary:     promptSummary,
+				Highlights:  highlights,
+				Language:    ch.Language,
+				AspectRatio: cfg.Susanoo.AspectRatio,
+			}, cfg.Susanoo.PromptTemplate)
+			if err := coverGen.GenerateCover(ctxAI, prompt, coverPath); err != nil {
+				slog.Warn("generate: cover image generation failed", "err", err)
+			} else {
+				coverURL = coverRel
+			}
+		}
+		if qcli != nil && coverURL != "" {
+			ctxUp, cancelUp := context.WithTimeout(ctxAI, 30*time.Second)
+			viewURL, err := qcli.UploadAttachment(ctxUp, coverPath, false)
+			cancelUp()
+			if err != nil {
+				slog.Warn("generate: cover upload failed", "err", err)
+			} else if strings.TrimSpace(viewURL) != "" {
+				coverURL = viewURL
+			}
+		}
+		if coverURL != "" {
+			nd.CoverImageURL = coverURL
+		}
 
 		content, err := newsletter.Render(nd)
 		if err != nil {
@@ -356,11 +442,11 @@ var generateCmd = &cobra.Command{
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
-		path := filepath.Join(dir, fileName)
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		outPath := filepath.Join(dir, fileName)
+		if err := os.WriteFile(outPath, []byte(content), 0o644); err != nil {
 			return err
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Generated: %s\n", path)
+		fmt.Fprintf(cmd.OutOrStdout(), "Generated: %s\n", outPath)
 		return nil
 	},
 }
@@ -453,4 +539,11 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

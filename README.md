@@ -102,6 +102,15 @@ openai:
   model: "gpt-4o-mini"
   base_url: ""  # optional, e.g., https://api.openai.com/v1
 
+susanoo:
+  base_url: ""  # Susanoo API base URL
+  api_key: ""   # X-SUSANOO-KEY value
+  model: "gemini-2.5-flash"
+  timeout: "30s"
+  aspect_ratio: "16:9"
+  webp_quality: 85
+  prompt_template: ""  # optional, supports {Title} {Summary} {Highlights} {Language} {AspectRatio}
+
 sources:
   v2ex:
     token: ""      # required, get from https://www.v2ex.com/settings/tokens

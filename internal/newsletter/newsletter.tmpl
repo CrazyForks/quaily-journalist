@@ -2,6 +2,9 @@
 title: "{{ .Title }}"
 slug: {{ .Slug }}
 datetime: {{ .Datetime }}
+{{- if .CoverImageURL }}
+cover_image_url: "{{ .CoverImageURL }}"
+{{- end }}
 summary: |-
   {{ .ShortSummary }}
 ---

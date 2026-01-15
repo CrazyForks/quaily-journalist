@@ -13,6 +13,7 @@ import (
 
 	"quaily-journalist/internal/ai"
 	"quaily-journalist/internal/hackernews"
+	"quaily-journalist/internal/imagegen"
 	"quaily-journalist/internal/quaily"
 	"quaily-journalist/internal/redisclient"
 	"quaily-journalist/internal/scrape"
@@ -139,6 +140,30 @@ var serveCmd = &cobra.Command{
 			cfc = scrape.NewCloudflare(cfg.Cloudflare.AccountID, cfg.Cloudflare.APIToken, 20*time.Second)
 		}
 
+		var coverGen imagegen.Generator
+		if strings.TrimSpace(cfg.Susanoo.BaseURL) != "" && strings.TrimSpace(cfg.Susanoo.APIKey) != "" {
+			timeout := 30 * time.Second
+			if strings.TrimSpace(cfg.Susanoo.Timeout) != "" {
+				if d, err := time.ParseDuration(cfg.Susanoo.Timeout); err != nil {
+					return fmt.Errorf("invalid susanoo.timeout: %w", err)
+				} else {
+					timeout = d
+				}
+			}
+			gen, err := imagegen.NewSusanoo(imagegen.SusanooConfig{
+				BaseURL:     cfg.Susanoo.BaseURL,
+				APIKey:      cfg.Susanoo.APIKey,
+				Model:       cfg.Susanoo.Model,
+				AspectRatio: cfg.Susanoo.AspectRatio,
+				Timeout:     timeout,
+				WebPQuality: cfg.Susanoo.WebPQuality,
+			})
+			if err != nil {
+				return err
+			}
+			coverGen = gen
+		}
+
 		// Newsletter builders (one per channel)
 		var builders []worker.Worker
 		for _, ch := range cfg.Newsletters.Channels {
@@ -169,6 +194,9 @@ var serveCmd = &cobra.Command{
 				TitleTemplate: ch.Template.Title,
 				Quaily:        qcli,
 				Cloudflare:    cfc,
+				CoverGen:      coverGen,
+				CoverPrompt:   cfg.Susanoo.PromptTemplate,
+				CoverAspect:   cfg.Susanoo.AspectRatio,
 			})
 		}
 

@@ -38,6 +38,17 @@ type OpenAIConfig struct {
 	BaseURL string `mapstructure:"base_url"`
 }
 
+// SusanooConfig holds Susanoo image generation settings.
+type SusanooConfig struct {
+	BaseURL        string `mapstructure:"base_url"`
+	APIKey         string `mapstructure:"api_key"`
+	Model          string `mapstructure:"model"`
+	Timeout        string `mapstructure:"timeout"`
+	AspectRatio    string `mapstructure:"aspect_ratio"`
+	PromptTemplate string `mapstructure:"prompt_template"`
+	WebPQuality    int    `mapstructure:"webp_quality"`
+}
+
 // NewsletterConfig controls publication logic.
 type NewslettersConfig struct {
 	Frequency string          `mapstructure:"frequency"` // default frequency
@@ -76,6 +87,7 @@ type Config struct {
 	Redis       RedisConfig       `mapstructure:"redis"`
 	Sources     DataSources       `mapstructure:"sources"`
 	OpenAI      OpenAIConfig      `mapstructure:"openai"`
+	Susanoo     SusanooConfig     `mapstructure:"susanoo"`
 	Newsletters NewslettersConfig `mapstructure:"newsletters"`
 	Quaily      QuailyConfig      `mapstructure:"quaily"`
 	Cloudflare  CloudflareConfig  `mapstructure:"cloudflare"`
@@ -85,6 +97,18 @@ type Config struct {
 func (c *Config) FillDefaults() {
 	if c.App.LogLevel == "" {
 		c.App.LogLevel = "info"
+	}
+	if c.Susanoo.Model == "" {
+		c.Susanoo.Model = "gemini-2.5-flash"
+	}
+	if c.Susanoo.Timeout == "" {
+		c.Susanoo.Timeout = "30s"
+	}
+	if c.Susanoo.AspectRatio == "" {
+		c.Susanoo.AspectRatio = "16:9"
+	}
+	if c.Susanoo.WebPQuality == 0 {
+		c.Susanoo.WebPQuality = 85
 	}
 }
 
