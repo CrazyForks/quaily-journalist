@@ -48,7 +48,10 @@ func (c *Client) UploadAttachment(ctx context.Context, filePath string, encrypte
 		return "", fmt.Errorf("close multipart writer: %w", err)
 	}
 
-	url := c.baseURL + "/attachments?encrypted=" + strconv.FormatBool(encrypted)
+	url := c.baseURL + "/attachments"
+	if encrypted {
+		url += "?encrypted=" + strconv.FormatBool(encrypted)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &body)
 	if err != nil {
 		return "", err
