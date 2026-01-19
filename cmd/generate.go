@@ -393,7 +393,9 @@ var generateCmd = &cobra.Command{
 		coverURL := ""
 		if _, err := os.Stat(coverPath); err == nil {
 			coverURL = coverRel
+			slog.Info("generate: using existing cover image", "channel", ch.Name, "slug", slug, "path", coverPath)
 		} else if coverGen != nil {
+			slog.Info("generate: generating cover image", "channel", ch.Name, "slug", slug, "path", coverPath)
 			highlights := make([]string, 0, min(5, len(nd.Items)))
 			for i := 0; i < min(5, len(nd.Items)); i++ {
 				highlights = append(highlights, nd.Items[i].Title)
@@ -413,7 +415,10 @@ var generateCmd = &cobra.Command{
 				slog.Warn("generate: cover image generation failed", "err", err)
 			} else {
 				coverURL = coverRel
+				slog.Info("generate: cover image generated", "channel", ch.Name, "slug", slug, "path", coverPath)
 			}
+		} else {
+			slog.Info("generate: cover image generation skipped (no generator configured)", "channel", ch.Name, "slug", slug)
 		}
 		if qcli != nil && coverURL != "" {
 			ctxUp, cancelUp := context.WithTimeout(ctxAI, 30*time.Second)

@@ -3,7 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -72,7 +72,7 @@ func (w *NewsletterBuilder) runOnce(ctx context.Context) {
 	period := periodKey(w.Frequency, time.Now().UTC())
 	published, err := w.Store.IsPublished(ctx, w.Channel, period)
 	if err != nil {
-		log.Printf("builder: check published err=%v", err)
+		slog.Warn("builder: check published failed", "err", err, "channel", w.Channel, "period", period)
 		return
 	}
 	if published {
@@ -86,7 +86,7 @@ func (w *NewsletterBuilder) runOnce(ctx context.Context) {
 	}
 	items, err := w.Store.TopNews(ctx, w.Source, period, fetchN)
 	if err != nil {
-		log.Printf("builder: fetch top news err=%v", err)
+		slog.Warn("builder: fetch top news failed", "err", err, "source", w.Source, "channel", w.Channel, "period", period)
 		return
 	}
 	// For Hacker News, nodes represent lists to poll; only filter by nodes if
@@ -115,7 +115,7 @@ func (w *NewsletterBuilder) runOnce(ctx context.Context) {
 	for _, ws := range items {
 		skip, err := w.Store.IsSkipped(ctx, w.Channel, ws.Item.ID)
 		if err != nil {
-			log.Printf("builder: skip-check err id=%s err=%v", ws.Item.ID, err)
+			slog.Warn("builder: skip-check failed", "err", err, "channel", w.Channel, "item_id", ws.Item.ID)
 			continue
 		}
 		if !skip {
@@ -130,28 +130,28 @@ func (w *NewsletterBuilder) runOnce(ctx context.Context) {
 	name := w.filename(period)
 	path := filepath.Join(w.OutputDir, w.Channel, name)
 	if err := os.WriteFile(path, []byte(md), 0o644); err != nil {
-		log.Printf("builder: write file err=%v", err)
+		slog.Warn("builder: write file failed", "err", err, "channel", w.Channel, "path", path)
 		return
 	}
 	if err := w.Store.MarkPublished(ctx, w.Channel, period); err != nil {
-		log.Printf("builder: mark published err=%v", err)
+		slog.Warn("builder: mark published failed", "err", err, "channel", w.Channel, "period", period)
 		return
 	}
 	// mark items as skipped for the configured duration
 	for _, ws := range items[:min(len(items), w.TopN)] {
 		if err := w.Store.MarkSkipped(ctx, w.Channel, ws.Item.ID, w.SkipDuration); err != nil {
-			log.Printf("builder: mark skipped err id=%s err=%v", ws.Item.ID, err)
+			slog.Warn("builder: mark skipped failed", "err", err, "channel", w.Channel, "item_id", ws.Item.ID)
 		}
 	}
-	log.Printf("builder: published %s with %d items", path, len(items))
+	slog.Info("builder: published", "channel", w.Channel, "path", path, "items", len(items))
 	// After generating, publish to Quaily if configured
 	if w.Quaily != nil {
 		ctxPub, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 		if err := quaily.PublishMarkdownFile(ctxPub, w.Quaily, path, w.Channel); err != nil {
-			log.Printf("builder: quaily publish failed: %v", err)
+			slog.Warn("builder: quaily publish failed", "err", err, "channel", w.Channel, "path", path)
 		} else {
-			log.Printf("builder: quaily publish ok for %s", path)
+			slog.Info("builder: quaily publish ok", "channel", w.Channel, "path", path)
 			// After publish, schedule a send (deliver) 5s later.
 			p := path
 			ch := w.Channel
@@ -161,9 +161,9 @@ func (w *NewsletterBuilder) runOnce(ctx context.Context) {
 				ctxDel, cancelDel := context.WithTimeout(context.Background(), 30*time.Second)
 				defer cancelDel()
 				if err := quaily.DeliverMarkdownOrSlug(ctxDel, w.Quaily, p, ch); err != nil {
-					log.Printf("builder: quaily deliver failed for %s: %v", p, err)
+					slog.Warn("builder: quaily deliver failed", "err", err, "channel", ch, "path", p)
 				} else {
-					log.Printf("builder: quaily deliver ok for %s", p)
+					slog.Info("builder: quaily deliver ok", "channel", ch, "path", p)
 				}
 			}()
 		}
@@ -221,7 +221,7 @@ func (w *NewsletterBuilder) renderMarkdown(period string, items []model.WithScor
 			_, scraped, err := w.Cloudflare.Scrape(ctxReq, it.URL)
 			cancelReq()
 			if err != nil {
-				log.Printf("builder: scrape fallback failed url=%s err=%v", it.URL, err)
+				slog.Warn("builder: scrape fallback failed", "err", err, "url", it.URL)
 			} else if strings.TrimSpace(scraped) != "" {
 				contentForSum = scraped
 			}
@@ -274,7 +274,9 @@ func (w *NewsletterBuilder) renderMarkdown(period string, items []model.WithScor
 	coverURL := ""
 	if _, err := os.Stat(coverPath); err == nil {
 		coverURL = coverRel
+		slog.Info("builder: using existing cover image", "channel", w.Channel, "slug", slug, "path", coverPath)
 	} else if w.CoverGen != nil {
+		slog.Info("builder: generating cover image", "channel", w.Channel, "slug", slug, "path", coverPath)
 		highlights := make([]string, 0, min(5, len(data.Items)))
 		for i := 0; i < min(5, len(data.Items)); i++ {
 			highlights = append(highlights, data.Items[i].Title)
@@ -291,17 +293,20 @@ func (w *NewsletterBuilder) renderMarkdown(period string, items []model.WithScor
 			AspectRatio: w.CoverAspect,
 		}, w.CoverPrompt)
 		if err := w.CoverGen.GenerateCover(ctxAI, prompt, coverPath); err != nil {
-			log.Printf("builder: cover image generation failed: %v", err)
+			slog.Warn("builder: cover image generation failed", "err", err, "channel", w.Channel, "slug", slug, "path", coverPath)
 		} else {
 			coverURL = coverRel
+			slog.Info("builder: cover image generated", "channel", w.Channel, "slug", slug, "path", coverPath)
 		}
+	} else {
+		slog.Info("builder: cover image generation skipped (no generator configured)", "channel", w.Channel, "slug", slug)
 	}
 	if w.Quaily != nil && coverURL != "" {
 		ctxUp, cancelUp := context.WithTimeout(ctxAI, 30*time.Second)
 		viewURL, err := w.Quaily.UploadAttachment(ctxUp, coverPath, false)
 		cancelUp()
 		if err != nil {
-			log.Printf("builder: cover upload failed: %v", err)
+			slog.Warn("builder: cover upload failed", "err", err, "channel", w.Channel, "slug", slug, "path", coverPath)
 		} else if strings.TrimSpace(viewURL) != "" {
 			coverURL = viewURL
 		}
@@ -311,7 +316,7 @@ func (w *NewsletterBuilder) renderMarkdown(period string, items []model.WithScor
 	}
 	out, err := newsletter.Render(data)
 	if err != nil {
-		log.Printf("builder: render template err=%v", err)
+		slog.Warn("builder: render template failed", "err", err, "channel", w.Channel, "slug", slug)
 		return ""
 	}
 	if !utf8.ValidString(out) {

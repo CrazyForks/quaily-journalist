@@ -11,6 +11,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -99,8 +100,15 @@ func (s *Susanoo) GenerateCover(ctx context.Context, prompt, outPath string) err
 	if strings.TrimSpace(prompt) == "" {
 		return errors.New("prompt is empty")
 	}
+	start := time.Now()
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
+
+	slog.Info("susanoo: generating cover image",
+		"model", s.model,
+		"aspect_ratio", s.aspectRatio,
+		"out_path", outPath,
+	)
 
 	body, err := json.Marshal(imageGenerationRequest{
 		Model:    s.model,
@@ -120,11 +128,16 @@ func (s *Susanoo) GenerateCover(ctx context.Context, prompt, outPath string) err
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-SUSANOO-KEY", s.apiKey)
 
+	reqStart := time.Now()
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("susanoo request: %w", err)
 	}
 	defer resp.Body.Close()
+	slog.Info("susanoo: response received",
+		"status", resp.StatusCode,
+		"duration", time.Since(reqStart),
+	)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("susanoo status=%d body=%s", resp.StatusCode, string(b))
@@ -143,10 +156,16 @@ func (s *Susanoo) GenerateCover(ctx context.Context, prompt, outPath string) err
 	if err != nil {
 		return fmt.Errorf("decode base64 image: %w", err)
 	}
+	slog.Info("susanoo: image payload decoded", "bytes", len(raw))
 	img, _, err := image.Decode(bytes.NewReader(raw))
 	if err != nil {
 		return fmt.Errorf("decode image: %w", err)
 	}
+	bounds := img.Bounds()
+	slog.Info("susanoo: image decoded",
+		"width", bounds.Dx(),
+		"height", bounds.Dy(),
+	)
 
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
 		return fmt.Errorf("create cover dir: %w", err)
@@ -157,9 +176,11 @@ func (s *Susanoo) GenerateCover(ctx context.Context, prompt, outPath string) err
 	}
 	defer f.Close()
 
+	slog.Info("susanoo: writing webp", "path", outPath, "quality", s.webPQuality)
 	if err := webp.Encode(f, img, &webp.Options{Quality: float32(s.webPQuality)}); err != nil {
 		return fmt.Errorf("encode webp: %w", err)
 	}
+	slog.Info("susanoo: cover image saved", "path", outPath, "duration", time.Since(start))
 	return nil
 }
 
