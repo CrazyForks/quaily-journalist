@@ -229,6 +229,8 @@ func (w *NewsletterBuilder) renderMarkdown(period string, items []model.WithScor
 		if w.Summarizer != nil {
 			if d, err := w.Summarizer.SummarizeItem(ctxAI, it.Title, contentForSum, w.Language); err == nil && d != "" {
 				desc = d
+			} else if err != nil {
+				slog.Warn("builder: summarize item failed", "err", err, "channel", w.Channel, "title", it.Title, "url", it.URL)
 			}
 		}
 		nodeURL := nodeURLFor(w.Source, w.BaseURL, it.NodeName)
@@ -254,9 +256,13 @@ func (w *NewsletterBuilder) renderMarkdown(period string, items []model.WithScor
 	if w.Summarizer != nil {
 		if s, err := w.Summarizer.SummarizePost(ctxAI, raw, w.Language); err == nil {
 			data.Summary = strings.TrimSpace(s)
+		} else if err != nil {
+			slog.Warn("builder: summarize post failed", "err", err, "channel", w.Channel)
 		}
 		if s, err := w.Summarizer.SummarizePostLikeAZenMaster(ctxAI, raw, w.Language); err == nil {
 			data.ShortSummary = strings.TrimSpace(s)
+		} else if err != nil {
+			slog.Warn("builder: summarize short post failed", "err", err, "channel", w.Channel)
 		}
 	}
 	if strings.TrimSpace(data.Summary) == "" {

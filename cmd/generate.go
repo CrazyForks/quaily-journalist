@@ -357,6 +357,8 @@ var generateCmd = &cobra.Command{
 			if summarizer != nil {
 				if d, err := summarizer.SummarizeItem(ctxAI, it.Title, contentForSum, ch.Language); err == nil && d != "" {
 					desc = d
+				} else if err != nil {
+					slog.Warn("generate: summarize item failed", "err", err, "channel", ch.Name, "title", it.Title, "url", it.URL)
 				}
 			}
 			displayNode := it.NodeName
@@ -383,9 +385,13 @@ var generateCmd = &cobra.Command{
 		if summarizer != nil {
 			if s, err := summarizer.SummarizePost(ctxAI, raw, ch.Language); err == nil {
 				nd.Summary = strings.TrimSpace(s)
+			} else if err != nil {
+				slog.Warn("generate: summarize post failed", "err", err, "channel", ch.Name)
 			}
 			if s, err := summarizer.SummarizePostLikeAZenMaster(ctxAI, raw, ch.Language); err == nil {
 				nd.ShortSummary = strings.TrimSpace(s)
+			} else if err != nil {
+				slog.Warn("generate: summarize short post failed", "err", err, "channel", ch.Name)
 			}
 		}
 		coverRel := path.Join(slug, "cover.webp")
